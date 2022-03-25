@@ -274,6 +274,7 @@ dependencies = [
  "mimalloc",
  "rand",
  "rayon",
+ "tinybox",
 ]
 
 [[package]]
@@ -354,6 +355,12 @@ name = "scopeguard"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d29ab0c6d3fc0ee92fe66e2d99f700eab17a8d57d1c1d3b748380fb20baa78cd"
+
+[[package]]
+name = "tinybox"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6b0d1ad6761c95d5727cb7fa52a76d642892fefcf235573371055036142e5649"
 
 [[package]]
 name = "wasi"

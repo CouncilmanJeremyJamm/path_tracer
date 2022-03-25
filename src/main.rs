@@ -1,7 +1,5 @@
-use mimalloc::MiMalloc;
-
-#[global_allocator]
-static GLOBAL: MiMalloc = MiMalloc;
+#![feature(total_cmp)]
+extern crate core;
 
 use image::{DynamicImage, GenericImageView, ImageResult, Pixel};
 use rayon::prelude::*;
@@ -12,7 +10,10 @@ use crate::primitive::model::{HitInfo, Model};
 use crate::primitive::Triangle;
 use crate::primitivelist::PrimitiveList;
 use crate::ray::Ray;
-use crate::utility::{random_f64, EPSILON, INFINITY};
+use crate::utility::{random_f32, EPSILON, INFINITY};
+
+#[global_allocator]
+static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 mod camera;
 mod material;
@@ -22,70 +23,76 @@ mod primitivelist;
 mod ray;
 mod utility;
 
-const ASPECT_RATIO: f64 = 1.0;
+const ASPECT_RATIO: f32 = 1.0;
 const IMAGE_WIDTH: usize = 1000;
-const IMAGE_HEIGHT: usize = ((IMAGE_WIDTH as f64) / ASPECT_RATIO) as usize;
-const SAMPLES_PER_PIXEL: u32 = 64;
+const IMAGE_HEIGHT: usize = ((IMAGE_WIDTH as f32) / ASPECT_RATIO) as usize;
+const SAMPLES_PER_PIXEL: u32 = 128;
 const MAX_BOUNCES: u32 = 128;
 
 const ENABLE_NEE: bool = true;
 
-fn generate_halton(base_x: u32, base_y: u32, num_samples: u32) -> Vec<glam::DVec2>
+fn generate_halton(base_x: u32, base_y: u32, num_samples: u32) -> Vec<glam::Vec2>
 {
-    let mut samples: Vec<glam::DVec2> = vec![glam::DVec2::new(0.0, 0.0); num_samples as usize];
-
-    for i in 0..num_samples {
-        // x axis
-        samples[i as usize].x = 0.0;
-        {
-            let mut denominator: f64 = base_x as f64;
+    (0..num_samples)
+        .into_par_iter()
+        .map(|i: u32| {
+            // x axis
+            let mut x: f32 = 0.0;
+            let mut denominator: f32 = base_x as f32;
             let mut n: u32 = i;
             while n > 0 {
                 let multiplier: u32 = n % base_x;
-                samples[i as usize].x += (multiplier as f64) / denominator;
+                x += (multiplier as f32) / denominator;
                 n /= base_x;
-                denominator *= base_x as f64;
+                denominator *= base_x as f32;
             }
-        }
 
-        // y axis
-        samples[i as usize].y = 0.0;
-        {
-            let mut denominator: f64 = base_y as f64;
+            // y axis
+            let mut y: f32 = 0.0;
+            let mut denominator: f32 = base_y as f32;
             let mut n: u32 = i;
             while n > 0 {
                 let multiplier: u32 = n % base_y;
-                samples[i as usize].y += (multiplier as f64) / denominator;
+                y += (multiplier as f32) / denominator;
                 n /= base_y;
-                denominator *= base_y as f64;
+                denominator *= base_y as f32;
             }
-        }
-    }
 
-    samples
+            glam::Vec2::new(x, y)
+        })
+        .collect()
 }
 
 #[allow(dead_code)]
 #[inline]
-fn balance_heuristic(f: f64, g: f64) -> f64
+fn balance_heuristic(f: f32, g: f32) -> f32
 {
     f / (f + g)
 }
 
 #[inline]
-fn power_heuristic(f: f64, g: f64) -> f64
+fn power_heuristic(f: f32, g: f32) -> f32
 {
     (f * f) / (f * f + g * g)
 }
 
-fn u8_to_float(a: u8) -> f64
+fn u8_to_float(a: u8) -> f32
 {
-    ((a as f64) / 255.0).powf(2.2)
+    ((a as f32) / 255.0).powf(2.2)
 }
 
-fn f64_to_u8(a: f64) -> u8
+fn f32_to_u8(a: f32) -> u8
 {
     (a.powf(1.0 / 2.2) * 255.0) as u8
+}
+
+fn map_colour(a: &glam::Vec3A) -> [u8; 3]
+{
+    [
+        f32_to_u8(a.x.clamp(0.0, 1.0)),
+        f32_to_u8(a.y.clamp(0.0, 1.0)),
+        f32_to_u8(a.z.clamp(0.0, 1.0)),
+    ]
 }
 
 fn estimate_direct(
@@ -94,39 +101,39 @@ fn estimate_direct(
     mat: &(dyn Material + Sync + Send),
     world: &PrimitiveList,
     lights: &PrimitiveList,
-) -> glam::DVec3
+) -> glam::Vec3A
 {
-    let mut direct: glam::DVec3 = glam::DVec3::new(0.0, 0.0, 0.0);
-    let incoming: glam::DVec3 = -r.direction;
+    let mut direct: glam::Vec3A = glam::Vec3A::new(0.0, 0.0, 0.0);
+    let incoming: glam::Vec3A = -r.direction;
 
     let num_lights: usize = lights.objects.len();
     let mut light: &Triangle = &lights.objects[0];
 
     for l in 1..num_lights {
-        if random_f64() < 1.0 / l as f64 {
+        if random_f32() < 1.0 / l as f32 {
             light = &lights.objects[l];
         }
     }
 
-    let u: f64 = random_f64();
-    let v: f64 = random_f64() * (1.0 - u);
-    let point: glam::DVec3 = light.local_to_world(u, v);
+    let u: f32 = random_f32();
+    let v: f32 = random_f32() * (1.0 - u);
+    let point: glam::Vec3A = light.local_to_world(u, v);
 
-    let o: glam::DVec3 = r.at(hit_info.t);
-    let d: glam::DVec3 = point - o;
+    let o: glam::Vec3A = r.at(hit_info.t);
+    let d: glam::Vec3A = point - o;
 
     let light_ray: Ray = Ray::new(o, d);
 
     if !world.any_intersect(&light_ray, 1.0 - EPSILON) {
-        let cosine: f64 = glam::DVec3::dot(d.normalize(), light.get_normal(u, v)).abs();
-        let light_pdf: f64 = d.length_squared() / (cosine * light.area() * (num_lights as f64));
+        let cosine: f32 = glam::Vec3A::dot(d.normalize(), light.get_normal(u, v)).abs();
+        let light_pdf: f32 = d.length_squared() / (cosine * light.area() * (num_lights as f32));
 
         let light_info: BsdfPdf = mat.get_brdf_pdf(incoming, light_ray.direction, hit_info);
 
         //Special case, ray to light might give an invalid PDF
         //All other rays are generated by the material and must have a valid PDF by construction
         if light_info.pdf > 0.0 {
-            let weight: f64 = power_heuristic(light_pdf, light_info.pdf);
+            let weight: f32 = power_heuristic(light_pdf, light_info.pdf);
             direct += light.material.get_emitted()
                 * weight
                 * mat.get_weakening(light_ray.direction, hit_info.normal)
@@ -143,14 +150,14 @@ fn estimate_direct(
 
     if let Some((material_hi, intersected)) = lights.intersect(&material_ray, INFINITY) {
         if !world.any_intersect(&material_ray, material_hi.t * (1.0 - EPSILON)) {
-            let cosine: f64 = glam::DVec3::dot(material_ray.direction, material_hi.normal).abs();
-            let light_pdf: f64 =
-                material_hi.t * material_hi.t / (cosine * intersected.area() * (num_lights as f64));
+            let cosine: f32 = glam::Vec3A::dot(material_ray.direction, material_hi.normal).abs();
+            let light_pdf: f32 =
+                material_hi.t * material_hi.t / (cosine * intersected.area() * (num_lights as f32));
 
             let material_info: BsdfPdf =
                 mat.get_brdf_pdf(incoming, material_ray.direction, hit_info);
 
-            let weight: f64 = power_heuristic(material_info.pdf, light_pdf);
+            let weight: f32 = power_heuristic(material_info.pdf, light_pdf);
             direct += intersected.material.get_emitted()
                 * weight
                 * mat.get_weakening(material_ray.direction, hit_info.normal)
@@ -168,31 +175,29 @@ fn integrate(
     lights: &PrimitiveList,
     env: &ImageResult<DynamicImage>,
     max_bounces: u32,
-) -> glam::DVec3
+) -> glam::Vec3A
 {
-    let use_env: bool = env.is_ok();
-
-    let mut accumulated: glam::DVec3 = glam::DVec3::new(0.0, 0.0, 0.0);
-    let mut path_weight: glam::DVec3 = glam::DVec3::new(1.0, 1.0, 1.0);
+    let mut accumulated: glam::Vec3A = glam::Vec3A::new(0.0, 0.0, 0.0);
+    let mut path_weight: glam::Vec3A = glam::Vec3A::new(1.0, 1.0, 1.0);
 
     let mut last_delta: bool = false;
 
     for b in 0..=max_bounces {
         if let Some((hit_info, object)) = world.intersect(&r, INFINITY) {
-            let wi: glam::DVec3 = -r.direction;
+            let wi: glam::Vec3A = -r.direction;
 
             if object.material.is_emissive() {
                 accumulated += if !ENABLE_NEE || last_delta || b == 0 {
                     object.material.get_emitted() * path_weight
                 } else {
-                    glam::DVec3::new(0.0, 0.0, 0.0)
+                    glam::Vec3A::new(0.0, 0.0, 0.0)
                 };
                 break;
             } else {
                 let is_delta: bool = object.material.is_delta();
 
                 accumulated += if !ENABLE_NEE || is_delta {
-                    glam::DVec3::new(0.0, 0.0, 0.0)
+                    glam::Vec3A::new(0.0, 0.0, 0.0)
                 } else {
                     path_weight * estimate_direct(&r, &hit_info, object.material, world, lights)
                 };
@@ -209,6 +214,10 @@ fn integrate(
                 let material_info: BsdfPdf =
                     object.material.get_brdf_pdf(wi, r.direction, &hit_info);
 
+                // if material_info.pdf <= 0.0 {
+                //     break;
+                // }
+
                 path_weight *= object.material.get_weakening(r.direction, hit_info.normal)
                     * material_info.bsdf
                     / material_info.pdf;
@@ -216,23 +225,26 @@ fn integrate(
                 last_delta = is_delta;
             }
         } else {
-            if use_env {
+            if env.is_ok() {
                 let image: &DynamicImage = env.as_ref().unwrap();
 
-                let dir: glam::DVec3 = glam::DVec3::normalize(r.direction);
+                let dir: glam::Vec3A = glam::Vec3A::normalize(r.direction);
 
-                let u: f64 = (dir.x.atan2(dir.z) * std::f64::consts::FRAC_1_PI * 0.5) + 0.5;
-                let v: f64 = (-dir.y.asin() * std::f64::consts::FRAC_1_PI) + 0.5;
+                let u: f32 = dir
+                    .x
+                    .atan2(dir.z)
+                    .mul_add(std::f32::consts::FRAC_1_PI * 0.5, 0.5);
+                let v: f32 = dir.y.asin().mul_add(-std::f32::consts::FRAC_1_PI, 0.5);
 
-                let x: u32 = ((image.dimensions().0 as f64) * u) as u32;
-                let y: u32 = ((image.dimensions().1 as f64) * v) as u32;
+                let x: u32 = ((image.dimensions().0 as f32) * u) as u32;
+                let y: u32 = ((image.dimensions().1 as f32) * v) as u32;
 
                 let pixel = image.get_pixel(
                     x.clamp(0, image.dimensions().0 - 1),
                     y.clamp(0, image.dimensions().1 - 1),
                 );
                 let rgba = pixel.channels();
-                let colour: glam::DVec3 = glam::DVec3::new(
+                let colour: glam::Vec3A = glam::Vec3A::new(
                     u8_to_float(rgba[0]),
                     u8_to_float(rgba[1]),
                     u8_to_float(rgba[2]),
@@ -240,15 +252,15 @@ fn integrate(
 
                 accumulated += colour * path_weight;
             } else {
-                accumulated += glam::DVec3::new(0.006, 0.006, 0.006) * path_weight;
+                accumulated += glam::Vec3A::new(0.006, 0.006, 0.006) * path_weight;
             }
 
             break;
         }
 
         if b > 3 {
-            let survive_prob: f64 = path_weight.max_element().clamp(0.0001, 0.9999);
-            if random_f64() > survive_prob {
+            let survive_prob: f32 = path_weight.max_element().clamp(0.0001, 0.9999);
+            if random_f32() > survive_prob {
                 break;
             } else {
                 path_weight /= survive_prob;
@@ -269,25 +281,25 @@ fn main()
     //Materials
     println!("Creating materials...");
 
-    let diffuse_gray = Lambertian::new(glam::DVec3::new(0.73, 0.73, 0.73));
-    let diffuse_green = Lambertian::new(glam::DVec3::new(0.12, 0.45, 0.15));
-    let diffuse_red = Lambertian::new(glam::DVec3::new(0.65, 0.05, 0.05));
-    let diffuse_blue = Lambertian::new(glam::DVec3::new(0.05, 0.05, 0.25));
-    let ggx_blue = GGX_Metal::new(glam::DVec3::new(0.05, 0.05, 0.25), 0.5);
+    let diffuse_gray = Lambertian::new(glam::Vec3A::new(0.73, 0.73, 0.73));
+    let diffuse_green = Lambertian::new(glam::Vec3A::new(0.12, 0.45, 0.15));
+    let diffuse_red = Lambertian::new(glam::Vec3A::new(0.65, 0.05, 0.05));
+    let diffuse_blue = Lambertian::new(glam::Vec3A::new(0.05, 0.05, 0.25));
+    let ggx_blue = GGX_Metal::new(glam::Vec3A::new(0.05, 0.05, 0.25), 0.4);
     let ggx_blue_2 = GGX_Dielectric::new(
-        glam::DVec3::new(0.05, 0.05, 0.05),
-        glam::DVec3::new(0.95, 0.95, 0.95),
+        glam::Vec3A::new(0.05, 0.05, 0.05),
+        glam::Vec3A::new(0.95, 0.95, 0.95),
         1.5,
         0.5,
     );
 
-    let light = Emissive::new(glam::DVec3::new(10.0, 10.0, 10.0));
+    let light = Emissive::new(glam::Vec3A::new(10.0, 10.0, 10.0));
 
     //Models and BVHs
     println!("Loading models, building BVHs...");
 
     let lights_model: Model = Model::new("models/cornell/cb_light.obj", &light);
-    let mut lights: PrimitiveList = PrimitiveList::default();
+    let mut lights: PrimitiveList = PrimitiveList::new();
     lights.add_models(Vec::from([lights_model]));
 
     let world_models: Vec<Model> = Vec::from([
@@ -296,7 +308,7 @@ fn main()
         Model::new("models/cornell/cb_left.obj", &diffuse_green),
         //Model::new("models/cornell/cb_box_tall.obj", &diffuse_gray),
         Model::new("models/cornell/cb_box_short.obj", &diffuse_gray),
-        Model::new("models/zenobia.obj", &diffuse_blue),
+        Model::new("models/zenobia.obj", &ggx_blue),
     ]);
 
     let mut world: PrimitiveList = PrimitiveList::copy(&lights);
@@ -304,11 +316,11 @@ fn main()
 
     //Camera
     println!("Initialising camera...");
-    let look_from: glam::DVec3 = glam::DVec3::new(0.0, 50.0, 1000.0);
-    let look_at: glam::DVec3 = glam::DVec3::new(0.0, 50.0, 0.0);
-    let up_vector: glam::DVec3 = glam::DVec3::new(0.0, 1.0, 0.0);
+    let look_from: glam::Vec3A = glam::Vec3A::new(0.0, 50.0, 1000.0);
+    let look_at: glam::Vec3A = glam::Vec3A::new(0.0, 50.0, 0.0);
+    let up_vector: glam::Vec3A = glam::Vec3A::new(0.0, 1.0, 0.0);
 
-    let focal_distance: f64 = glam::DVec3::length(look_at - look_from);
+    let focal_distance: f32 = glam::Vec3A::length(look_at - look_from);
 
     let cam: Camera = Camera::new(
         look_from,
@@ -321,47 +333,42 @@ fn main()
     );
 
     //Render
-    let mut image_data = vec![glam::DVec3::new(0.0, 0.0, 0.0); IMAGE_WIDTH * IMAGE_HEIGHT];
-    let sample_points: Vec<glam::DVec2> = generate_halton(2, 3, SAMPLES_PER_PIXEL);
+    let sample_points: Vec<glam::Vec2> = generate_halton(2, 3, SAMPLES_PER_PIXEL);
 
     println!("Starting path-tracing...");
     let render_begin = std::time::Instant::now();
 
-    image_data.par_iter_mut().enumerate().for_each(|tuple| {
-        let x: usize = tuple.0 % IMAGE_WIDTH;
-        let y: usize = IMAGE_HEIGHT - 1 - (tuple.0 / IMAGE_WIDTH);
+    let image_data: Vec<glam::Vec3A> = (0..(IMAGE_WIDTH * IMAGE_HEIGHT))
+        .into_par_iter()
+        .map(|i: usize| {
+            let x: usize = i % IMAGE_WIDTH;
+            let y: usize = IMAGE_HEIGHT - 1 - (i / IMAGE_WIDTH);
 
-        let mut accumulated: glam::DVec3 = glam::DVec3::new(0.0, 0.0, 0.0);
+            sample_points.iter().fold(
+                glam::Vec3A::new(0.0, 0.0, 0.0),
+                |accumulated: glam::Vec3A, offset: &glam::Vec2| {
+                    let u: f32 = (x as f32 + offset.x) / (IMAGE_WIDTH as f32);
+                    let v: f32 = (y as f32 + offset.y) / (IMAGE_HEIGHT as f32);
 
-        for s in 0..SAMPLES_PER_PIXEL {
-            let offset: glam::DVec2 = sample_points[s as usize];
+                    let ray: Ray = cam.create_ray(u, v);
+                    accumulated + integrate(ray, &world, &lights, &env, MAX_BOUNCES)
+                },
+            ) / (SAMPLES_PER_PIXEL as f32)
+        })
+        .collect();
 
-            let u: f64 = (x as f64 + offset.x) / (IMAGE_WIDTH as f64);
-            let v: f64 = (y as f64 + offset.y) / (IMAGE_HEIGHT as f64);
-
-            let ray: Ray = cam.create_ray(u, v);
-            accumulated += integrate(ray, &world, &lights, &env, MAX_BOUNCES);
-        }
-
-        *tuple.1 = accumulated;
-    });
     println!(
         "Finished path-tracing, took {} seconds",
         render_begin.elapsed().as_secs()
     );
 
     println!("Converting data...");
-    let mut data = vec![0u8; 3 * IMAGE_WIDTH * IMAGE_HEIGHT];
-    data.par_iter_mut().enumerate().for_each(|tuple| {
-        let float: f64 = image_data[tuple.0 / 3][tuple.0 % 3] / (SAMPLES_PER_PIXEL as f64);
-        let uint: u8 = f64_to_u8(float.clamp(0.0, 1.0));
-        *tuple.1 = uint;
-    });
+    let data: Vec<u8> = image_data.par_iter().flat_map_iter(map_colour).collect();
 
     println!("Saving output...");
     image::save_buffer(
         "images/output.png",
-        &*data,
+        data.as_slice(),
         IMAGE_WIDTH as u32,
         IMAGE_HEIGHT as u32,
         image::ColorType::Rgb8,

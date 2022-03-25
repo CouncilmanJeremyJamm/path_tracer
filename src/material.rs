@@ -1,19 +1,20 @@
+use glam::Vec3A;
+
 use crate::onb::{generate_onb, generate_onb_ggx};
 use crate::primitive::model::HitInfo;
-use crate::random_f64;
+use crate::random_f32;
 use crate::ray::Ray;
 use crate::utility::{random_cosine_vector, reflect, refract};
-use glam::DVec3;
 
 pub struct BsdfPdf
 {
-    pub bsdf: glam::DVec3,
-    pub pdf: f64,
+    pub bsdf: glam::Vec3A,
+    pub pdf: f32,
 }
 
 impl BsdfPdf
 {
-    pub fn new(bsdf: glam::DVec3, pdf: f64) -> Self
+    pub fn new(bsdf: glam::Vec3A, pdf: f32) -> Self
     {
         //debug_assert!(pdf > 0.0); //Not always true
         Self { bsdf, pdf }
@@ -24,20 +25,20 @@ pub trait Material
 {
     fn scatter_direction(
         &self,
-        incoming: glam::DVec3,
-        normal: glam::DVec3,
+        incoming: glam::Vec3A,
+        normal: glam::Vec3A,
         front_facing: bool,
-    ) -> glam::DVec3;
-    fn get_brdf_pdf(&self, incoming: glam::DVec3, outgoing: glam::DVec3, hi: &HitInfo) -> BsdfPdf;
-    fn get_emitted(&self) -> glam::DVec3
+    ) -> glam::Vec3A;
+    fn get_brdf_pdf(&self, incoming: glam::Vec3A, outgoing: glam::Vec3A, hi: &HitInfo) -> BsdfPdf;
+    fn get_emitted(&self) -> glam::Vec3A
     {
-        glam::DVec3::new(0.0, 0.0, 0.0)
+        glam::Vec3A::new(0.0, 0.0, 0.0)
     }
-    fn get_transmission(&self, _r: Ray, _t: f64) -> glam::DVec3
+    fn get_transmission(&self, _r: Ray, _t: f32) -> glam::Vec3A
     {
-        glam::DVec3::new(0.0, 0.0, 0.0)
+        glam::Vec3A::new(0.0, 0.0, 0.0)
     }
-    fn volume_scatter(&self, r: Ray, _t: f64) -> (bool, glam::DVec3)
+    fn volume_scatter(&self, r: Ray, _t: f32) -> (bool, glam::Vec3A)
     {
         (false, r.direction)
     }
@@ -51,24 +52,24 @@ pub trait Material
         false
     }
 
-    fn get_weakening(&self, wo: glam::DVec3, n: glam::DVec3) -> f64
+    fn get_weakening(&self, wo: glam::Vec3A, n: glam::Vec3A) -> f32
     {
         if self.is_delta() {
             1.0
         } else {
-            glam::DVec3::dot(glam::DVec3::normalize(wo), n).abs()
+            glam::Vec3A::dot(glam::Vec3A::normalize(wo), n).abs()
         }
     }
 }
 
 pub struct Lambertian
 {
-    albedo: glam::DVec3,
+    albedo: glam::Vec3A,
 }
 
 impl Lambertian
 {
-    pub fn new(albedo: glam::DVec3) -> Self
+    pub fn new(albedo: glam::Vec3A) -> Self
     {
         Self { albedo }
     }
@@ -78,31 +79,31 @@ impl Material for Lambertian
 {
     fn scatter_direction(
         &self,
-        _incoming: glam::DVec3,
-        normal: glam::DVec3,
+        _incoming: glam::Vec3A,
+        normal: glam::Vec3A,
         _front_facing: bool,
-    ) -> glam::DVec3
+    ) -> glam::Vec3A
     {
         generate_onb(normal) * random_cosine_vector()
     }
 
-    fn get_brdf_pdf(&self, _incoming: glam::DVec3, outgoing: glam::DVec3, hi: &HitInfo) -> BsdfPdf
+    fn get_brdf_pdf(&self, _incoming: glam::Vec3A, outgoing: glam::Vec3A, hi: &HitInfo) -> BsdfPdf
     {
-        let cosine: f64 = glam::DVec3::dot(glam::DVec3::normalize(outgoing), hi.normal);
-        let bsdf: glam::DVec3 = self.albedo * std::f64::consts::FRAC_1_PI;
-        let pdf: f64 = cosine * std::f64::consts::FRAC_1_PI;
+        let cosine: f32 = glam::Vec3A::dot(glam::Vec3A::normalize(outgoing), hi.normal);
+        let bsdf: glam::Vec3A = self.albedo * std::f32::consts::FRAC_1_PI;
+        let pdf: f32 = cosine * std::f32::consts::FRAC_1_PI;
         BsdfPdf::new(bsdf, pdf)
     }
 }
 
 pub struct Emissive
 {
-    emitted: glam::DVec3,
+    emitted: glam::Vec3A,
 }
 
 impl Emissive
 {
-    pub fn new(emitted: glam::DVec3) -> Self
+    pub fn new(emitted: glam::Vec3A) -> Self
     {
         Self { emitted }
     }
@@ -112,21 +113,21 @@ impl Material for Emissive
 {
     fn scatter_direction(
         &self,
-        _incoming: glam::DVec3,
-        _normal: glam::DVec3,
+        _incoming: glam::Vec3A,
+        _normal: glam::Vec3A,
         _front_facing: bool,
-    ) -> glam::DVec3
+    ) -> glam::Vec3A
     {
-        glam::DVec3::new(0.0, 0.0, 0.0)
+        glam::Vec3A::new(0.0, 0.0, 0.0)
     }
 
-    fn get_brdf_pdf(&self, _incoming: glam::DVec3, _outgoing: glam::DVec3, _hi: &HitInfo)
+    fn get_brdf_pdf(&self, _incoming: glam::Vec3A, _outgoing: glam::Vec3A, _hi: &HitInfo)
         -> BsdfPdf
     {
         BsdfPdf::new(self.emitted, 1.0)
     }
 
-    fn get_emitted(&self) -> glam::DVec3
+    fn get_emitted(&self) -> glam::Vec3A
     {
         self.emitted
     }
@@ -140,84 +141,84 @@ impl Material for Emissive
 struct GGX {}
 impl GGX
 {
-    fn d(n: glam::DVec3, h: glam::DVec3, a: f64) -> f64
+    fn d(n: glam::Vec3A, h: glam::Vec3A, a: f32) -> f32
     {
-        let n_dot_h: f64 = glam::DVec3::dot(n, h);
-        let x: f64 = (n_dot_h * n_dot_h * (a * a - 1.0)) + 1.0;
+        let n_dot_h: f32 = glam::Vec3A::dot(n, h);
+        let x: f32 = (n_dot_h * n_dot_h * (a * a - 1.0)) + 1.0;
 
-        a * a * std::f64::consts::FRAC_1_PI / (x * x)
+        a * a * std::f32::consts::FRAC_1_PI / (x * x)
     }
 
-    fn generate_half_vector(incoming: glam::DVec3, normal: glam::DVec3, a: f64) -> glam::DVec3
+    fn generate_half_vector(incoming: glam::Vec3A, normal: glam::Vec3A, a: f32) -> glam::Vec3A
     {
-        let onb_a: glam::DMat3 = generate_onb(normal);
+        let onb_a: glam::Mat3A = generate_onb(normal);
 
-        let _v: glam::DVec3 = onb_a.transpose() * -incoming;
-        let v: glam::DVec3 = (_v * glam::DVec3::new(a, a, 1.0)).normalize();
+        let _v: glam::Vec3A = onb_a.transpose() * -incoming;
+        let v: glam::Vec3A = (_v * glam::Vec3A::new(a, a, 1.0)).normalize();
 
         //Can't use generate_onb() for this, use implementation from the paper instead
-        let onb_b: glam::DMat3 = generate_onb_ggx(v);
+        let onb_b: glam::Mat3A = generate_onb_ggx(v);
 
-        let u1: f64 = random_f64();
-        let u2: f64 = random_f64();
+        let u1: f32 = random_f32();
+        let u2: f32 = random_f32();
 
-        let _a: f64 = 1.0 / (1.0 + v.z);
+        let _a: f32 = 1.0 / (1.0 + v.z);
         let condition: bool = u2 < _a; //If condition is true, sample from the tilted half-disk
 
-        let r: f64 = u1.sqrt();
-        let phi: f64 = if condition {
-            std::f64::consts::PI * u2 / _a
+        let r: f32 = u1.sqrt();
+        let phi: f32 = if condition {
+            std::f32::consts::PI * u2 / _a
         } else {
-            std::f64::consts::PI + ((u2 - _a) / (1.0 - _a)) * std::f64::consts::PI
+            std::f32::consts::PI + ((u2 - _a) / (1.0 - _a)) * std::f32::consts::PI
         };
-        let (sin, cos): (f64, f64) = phi.sin_cos();
-        let p1: f64 = r * cos;
-        let p2: f64 = r * sin * if condition { 1.0 } else { v.z };
+        let (sin, cos): (f32, f32) = phi.sin_cos();
+        let p1: f32 = r * cos;
+        let p2: f32 = r * sin * if condition { 1.0 } else { v.z };
 
-        let _h: glam::DVec3 = onb_b * glam::DVec3::new(p1, p2, (1.0 - p1 * p1 - p2 * p2).sqrt());
+        let _h: glam::Vec3A = onb_b * glam::Vec3A::new(p1, p2, (1.0 - p1 * p1 - p2 * p2).sqrt());
 
-        onb_a * (_h * glam::DVec3::new(a, a, 1.0)).normalize()
+        onb_a * (_h * glam::Vec3A::new(a, a, 1.0)).normalize()
     }
 }
 
 //TODO: pack colour and a
 pub struct GGX_Metal
 {
-    colour: glam::DVec3,
-    a: f64,
+    colour: glam::Vec3A,
+    a: f32,
 }
 
 #[allow(clippy::upper_case_acronyms)]
 impl GGX_Metal
 {
-    fn f(&self, v_dot_h: f64) -> glam::DVec3
+    fn f(&self, v_dot_h: f32) -> glam::Vec3A
     {
         self.colour + ((1.0 - self.colour) * (1.0 - v_dot_h).powi(5))
     }
 
-    fn g(&self, n: glam::DVec3, wi: glam::DVec3, wo: glam::DVec3) -> f64
+    fn g(&self, n: glam::Vec3A, wi: glam::Vec3A, wo: glam::Vec3A) -> f32
     {
-        let n_dot_i: f64 = glam::DVec3::dot(n, wi);
-        let n_dot_o: f64 = glam::DVec3::dot(n, wo);
+        let n_dot_i: f32 = glam::Vec3A::dot(n, wi);
+        let n_dot_o: f32 = glam::Vec3A::dot(n, wo);
 
         if n_dot_i <= 0.0 || n_dot_o <= 0.0 {
             return 0.0;
         }
 
-        let a_squared: f64 = self.a * self.a;
+        let a_squared: f32 = self.a * self.a;
 
-        let x: f64 = 2.0 * n_dot_i * n_dot_o;
-        let y: f64 = 1.0 - a_squared;
-        let z: f64 = n_dot_o * (a_squared + (y * n_dot_i * n_dot_i)).sqrt();
-        let w: f64 = n_dot_i * (a_squared + (y * n_dot_o * n_dot_o)).sqrt();
+        let x: f32 = 2.0 * n_dot_i * n_dot_o;
+        let y: f32 = 1.0 - a_squared;
+        let z: f32 = n_dot_o * (a_squared + (y * n_dot_i * n_dot_i)).sqrt();
+        let w: f32 = n_dot_i * (a_squared + (y * n_dot_o * n_dot_o)).sqrt();
 
         x / (z + w)
     }
-    pub fn new(colour: glam::DVec3, roughness: f64) -> Self
+    pub fn new(colour: glam::Vec3A, roughness: f32) -> Self
     {
         Self {
             colour,
-            a: roughness.clamp(0.0001, 1.0),
+            a: roughness.powi(2).clamp(0.0001, 1.0),
         }
     }
 }
@@ -226,34 +227,34 @@ impl Material for GGX_Metal
 {
     fn scatter_direction(
         &self,
-        incoming: glam::DVec3,
-        normal: glam::DVec3,
+        incoming: glam::Vec3A,
+        normal: glam::Vec3A,
         _front_facing: bool,
-    ) -> glam::DVec3
+    ) -> glam::Vec3A
     {
-        let direction: glam::DVec3 = incoming.normalize();
-        let h: glam::DVec3 = GGX::generate_half_vector(direction, normal, self.a);
+        let direction: glam::Vec3A = incoming.normalize();
+        let h: glam::Vec3A = GGX::generate_half_vector(direction, normal, self.a);
 
         reflect(direction, h)
     }
 
     //TODO: simplify. Precalculate dot products and pass to functions
-    fn get_brdf_pdf(&self, incoming: glam::DVec3, outgoing: glam::DVec3, hi: &HitInfo) -> BsdfPdf
+    fn get_brdf_pdf(&self, incoming: glam::Vec3A, outgoing: glam::Vec3A, hi: &HitInfo) -> BsdfPdf
     {
         //Outgoing = direction of light ray = -direction of tracing ray
         //Incoming = direction of reflection
-        let wi: glam::DVec3 = outgoing.normalize();
-        let wo: glam::DVec3 = incoming.normalize();
+        let wi: glam::Vec3A = outgoing.normalize();
+        let wo: glam::Vec3A = incoming.normalize();
 
-        let h: glam::DVec3 = (wi + wo).normalize();
-        let d: f64 = GGX::d(hi.normal, h, self.a);
-        let o_dot_h: f64 = glam::DVec3::dot(wo, h);
+        let h: glam::Vec3A = (wi + wo).normalize();
+        let d: f32 = GGX::d(hi.normal, h, self.a);
+        let o_dot_h: f32 = glam::Vec3A::dot(wo, h);
 
-        let num: glam::DVec3 = self.f(o_dot_h) * self.g(hi.normal, wi, wo) * d;
-        let denom: f64 = 4.0 * glam::DVec3::dot(hi.normal, wi) * glam::DVec3::dot(hi.normal, wo);
+        let num: glam::Vec3A = self.f(o_dot_h) * self.g(hi.normal, wi, wo) * d;
+        let denom: f32 = 4.0 * glam::Vec3A::dot(hi.normal, wi) * glam::Vec3A::dot(hi.normal, wo);
 
-        let brdf: glam::DVec3 = num / denom;
-        let pdf: f64 = d * glam::DVec3::dot(h, hi.normal) / (4.0 * glam::DVec3::dot(wo, h));
+        let brdf: glam::Vec3A = num / denom;
+        let pdf: f32 = d * glam::Vec3A::dot(h, hi.normal) / (4.0 * glam::Vec3A::dot(wo, h));
 
         BsdfPdf::new(brdf, pdf)
     }
@@ -262,38 +263,38 @@ impl Material for GGX_Metal
 #[allow(clippy::upper_case_acronyms)]
 pub struct GGX_Dielectric
 {
-    absorption: glam::DVec3,
-    colour: glam::DVec3,
-    ior: f64,
-    a: f64,
+    absorption: glam::Vec3A,
+    colour: glam::Vec3A,
+    ior: f32,
+    a: f32,
 }
 
 impl GGX_Dielectric
 {
-    fn f(&self, v_dot_h: f64, f0: f64) -> f64
+    fn f(&self, v_dot_h: f32, f0: f32) -> f32
     {
         f0 + ((1.0 - f0) * (1.0 - v_dot_h).powi(5))
     }
 
-    fn g_separable(&self, v: glam::DVec3, h: glam::DVec3, n: glam::DVec3) -> f64
+    fn g_separable(&self, v: glam::Vec3A, h: glam::Vec3A, n: glam::Vec3A) -> f32
     {
-        let n_dot_v: f64 = glam::DVec3::dot(n, v);
+        let n_dot_v: f32 = glam::Vec3A::dot(n, v);
 
-        if n_dot_v / glam::DVec3::dot(h, v) <= 0.0 {
+        if n_dot_v / glam::Vec3A::dot(h, v) <= 0.0 {
             return 0.0;
         }
 
-        let n_dot_v_sq: f64 = n_dot_v * n_dot_v;
-        let tan_squared: f64 = (1.0 - n_dot_v_sq) / n_dot_v_sq;
+        let n_dot_v_sq: f32 = n_dot_v * n_dot_v;
+        let tan_squared: f32 = (1.0 - n_dot_v_sq) / n_dot_v_sq;
         2.0 / (1.0 + (1.0 + (self.a * self.a * tan_squared)).sqrt())
     }
 
-    fn g(&self, wi: glam::DVec3, wo: glam::DVec3, h: glam::DVec3, n: glam::DVec3) -> f64
+    fn g(&self, wi: glam::Vec3A, wo: glam::Vec3A, h: glam::Vec3A, n: glam::Vec3A) -> f32
     {
         self.g_separable(wi, h, n) * self.g_separable(wo, h, n)
     }
 
-    pub fn new(absorption: glam::DVec3, colour: glam::DVec3, ior: f64, a: f64) -> Self
+    pub fn new(absorption: glam::Vec3A, colour: glam::Vec3A, ior: f32, a: f32) -> Self
     {
         Self {
             absorption,
@@ -306,23 +307,23 @@ impl GGX_Dielectric
 
 impl Material for GGX_Dielectric
 {
-    fn scatter_direction(&self, incoming: DVec3, normal: DVec3, front_facing: bool) -> glam::DVec3
+    fn scatter_direction(&self, incoming: Vec3A, normal: Vec3A, front_facing: bool) -> glam::Vec3A
     {
-        let direction: glam::DVec3 = incoming.normalize();
+        let direction: glam::Vec3A = incoming.normalize();
 
         //Generate half-vector from the GGX distribution
-        let h: glam::DVec3 = GGX::generate_half_vector(direction, normal, self.a);
+        let h: glam::Vec3A = GGX::generate_half_vector(direction, normal, self.a);
 
         //Reflect or refract using the half-vector as the normal
-        let cosine: f64 = -glam::DVec3::dot(direction, h);
-        let sine: f64 = (1.0 - cosine * cosine).sqrt();
+        let cosine: f32 = -glam::Vec3A::dot(direction, h);
+        let sine: f32 = (1.0 - cosine * cosine).sqrt();
 
-        let eta: f64 = if front_facing {
+        let eta: f32 = if front_facing {
             1.0 / self.ior
         } else {
             self.ior
         };
-        let f0: f64 = ((eta - 1.0) / (eta + 1.0)).powi(2);
+        let f0: f32 = ((eta - 1.0) / (eta + 1.0)).powi(2);
 
         let tir: bool = eta * sine > 1.0;
 
@@ -333,83 +334,83 @@ impl Material for GGX_Dielectric
 
         //Fresnel term must be calculated from the refracted ray, not the incident ray
         //Source: https://agraphicsguynotes.com/posts/glass_material_simulated_by_microfacet_bxdf/
-        let refracted: glam::DVec3 = refract(direction, h, eta);
+        let refracted: glam::Vec3A = refract(direction, h, eta);
 
-        if random_f64() < self.f(-glam::DVec3::dot(refracted, h), f0) {
+        if random_f32() < self.f(-glam::Vec3A::dot(refracted, h), f0) {
             reflect(direction, h)
         } else {
             refracted
         }
     }
 
-    fn get_brdf_pdf(&self, incoming: DVec3, outgoing: DVec3, hi: &HitInfo) -> BsdfPdf
+    fn get_brdf_pdf(&self, incoming: Vec3A, outgoing: Vec3A, hi: &HitInfo) -> BsdfPdf
     {
         //Outgoing = direction of light ray = -direction of tracing ray
         //Incoming = direction of scattering
-        let wi: glam::DVec3 = outgoing.normalize();
-        let wo: glam::DVec3 = incoming.normalize();
+        let wi: glam::Vec3A = outgoing.normalize();
+        let wo: glam::Vec3A = incoming.normalize();
 
-        let eta: f64 = if hi.front_facing {
+        let eta: f32 = if hi.front_facing {
             self.ior
         } else {
             1.0 / self.ior
         };
-        let f0: f64 = ((eta - 1.0) / (eta + 1.0)).powi(2);
+        let f0: f32 = ((eta - 1.0) / (eta + 1.0)).powi(2);
 
-        if glam::DVec3::dot(wi, hi.normal) > 0.0 {
+        if glam::Vec3A::dot(wi, hi.normal) > 0.0 {
             //Incident ray reflected
-            let h: glam::DVec3 = glam::DVec3::normalize(wi + wo);
+            let h: glam::Vec3A = glam::Vec3A::normalize(wi + wo);
 
             //Calculate reflection BRDF
             //Schlick's approximation uses the refracted direction
-            let o_dot_h: f64 = glam::DVec3::dot(wo, h);
-            let r_dot_h: f64 = glam::DVec3::dot(refract(-wo, h, 1.0 / eta), h);
+            let o_dot_h: f32 = glam::Vec3A::dot(wo, h);
+            let r_dot_h: f32 = glam::Vec3A::dot(refract(-wo, h, 1.0 / eta), h);
 
-            let d: f64 = GGX::d(hi.normal, h, self.a);
-            let f: f64 = self.f(-r_dot_h, f0);
+            let d: f32 = GGX::d(hi.normal, h, self.a);
+            let f: f32 = self.f(-r_dot_h, f0);
 
-            let u: f64 = f * self.g(wi, wo, h, hi.normal) * d;
-            let v: f64 =
-                4.0 * glam::DVec3::dot(hi.normal, wi).abs() * glam::DVec3::dot(hi.normal, wo);
+            let u: f32 = f * self.g(wi, wo, h, hi.normal) * d;
+            let v: f32 =
+                4.0 * glam::Vec3A::dot(hi.normal, wi).abs() * glam::Vec3A::dot(hi.normal, wo);
 
-            let brdf: f64 = u / v;
+            let brdf: f32 = u / v;
 
             //Calculate PDF
-            let jacobian: f64 = 1.0 / (4.0 * o_dot_h.abs());
-            let pdf: f64 = d * glam::DVec3::dot(h, hi.normal) * f * jacobian;
+            let jacobian: f32 = 1.0 / (4.0 * o_dot_h.abs());
+            let pdf: f32 = d * glam::Vec3A::dot(h, hi.normal) * f * jacobian;
 
             //Reflections are not affected by material colour
-            BsdfPdf::new(glam::DVec3::new(brdf, brdf, brdf), pdf)
+            BsdfPdf::new(glam::Vec3A::new(brdf, brdf, brdf), pdf)
         } else {
             //Incident ray refracted
-            let _h: glam::DVec3 = ((eta * wi) + wo).normalize();
-            let h: glam::DVec3 = if glam::DVec3::dot(hi.normal, _h) > 0.0 {
+            let _h: glam::Vec3A = ((eta * wi) + wo).normalize();
+            let h: glam::Vec3A = if glam::Vec3A::dot(hi.normal, _h) > 0.0 {
                 _h
             } else {
                 -_h
             };
-            let d: f64 = GGX::d(hi.normal, h, self.a);
+            let d: f32 = GGX::d(hi.normal, h, self.a);
 
-            let i_dot_h: f64 = glam::DVec3::dot(wi, h);
-            let o_dot_h: f64 = glam::DVec3::dot(wo, h);
+            let i_dot_h: f32 = glam::Vec3A::dot(wi, h);
+            let o_dot_h: f32 = glam::Vec3A::dot(wo, h);
 
             //Calculate transmission BSDF
-            let x: f64 = (i_dot_h * o_dot_h).abs();
-            let y: f64 = (glam::DVec3::dot(wi, hi.normal) * glam::DVec3::dot(wo, hi.normal)).abs();
+            let x: f32 = (i_dot_h * o_dot_h).abs();
+            let y: f32 = (glam::Vec3A::dot(wi, hi.normal) * glam::Vec3A::dot(wo, hi.normal)).abs();
             //TODO: fix i dot h
-            let f: f64 = self.f(-i_dot_h, f0);
+            let f: f32 = self.f(-i_dot_h, f0);
 
-            let z: f64 = (1.0 - f) * self.g(wi, wo, h, hi.normal) * d;
-            let w: f64 = (eta * i_dot_h) + o_dot_h;
+            let z: f32 = (1.0 - f) * self.g(wi, wo, h, hi.normal) * d;
+            let w: f32 = (eta * i_dot_h) + o_dot_h;
 
-            let btdf: f64 = (x * z) / (y * w * w);
+            let btdf: f32 = (x * z) / (y * w * w);
 
             //Calculate PDF
-            let ja: f64 = o_dot_h.abs();
-            let jb: f64 = w;
-            let jacobian: f64 = ja / (jb * jb);
-            let pdf: f64 = d * (1.0 - f) * glam::DVec3::dot(h, hi.normal) * jacobian;
-            println!("{}", f);
+            let ja: f32 = o_dot_h.abs();
+            let jb: f32 = w;
+            let jacobian: f32 = ja / (jb * jb);
+            let pdf: f32 = d * (1.0 - f) * glam::Vec3A::dot(h, hi.normal) * jacobian;
+            //println!("{}", f);
             //Transmission is affected by material colour
             BsdfPdf::new(self.colour * btdf, pdf)
         }

@@ -2,17 +2,17 @@ use crate::material;
 
 pub struct HitInfo
 {
-    pub normal: glam::DVec3,
-    pub local: glam::DVec2,
-    pub t: f64,
+    pub normal: glam::Vec3A,
+    pub local: glam::Vec2,
+    pub t: f32,
     pub front_facing: bool,
 }
 
 #[derive(Copy, Clone)]
 pub struct Vertex
 {
-    pub position: glam::DVec3,
-    pub normal: glam::DVec3,
+    pub position: glam::Vec3A,
+    pub normal: glam::Vec3A,
 }
 
 pub struct VertexRef

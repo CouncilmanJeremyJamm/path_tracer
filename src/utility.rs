@@ -1,36 +1,36 @@
-pub const EPSILON: f64 = 1e-09;
-pub const INFINITY: f64 = f64::INFINITY;
+pub const EPSILON: f32 = 5e-04;
+pub const INFINITY: f32 = f32::INFINITY;
 
-pub fn random_f64() -> f64
+pub fn random_f32() -> f32
 {
-    rand::random::<f64>()
+    rand::random::<f32>()
 }
 
-pub fn random_cosine_vector() -> glam::DVec3
+pub fn random_cosine_vector() -> glam::Vec3A
 {
-    let r1: f64 = random_f64();
-    let r2: f64 = random_f64();
-    let z: f64 = (1.0 - r2).sqrt();
+    let r1: f32 = random_f32();
+    let r2: f32 = random_f32();
+    let z: f32 = (1.0 - r2).sqrt();
 
-    let phi: f64 = std::f64::consts::TAU * r1;
-    let x: f64 = phi.cos() * r2.sqrt();
-    let y: f64 = phi.sin() * r2.sqrt();
+    let phi: f32 = std::f32::consts::TAU * r1;
+    let x: f32 = phi.cos() * r2.sqrt();
+    let y: f32 = phi.sin() * r2.sqrt();
 
-    glam::DVec3::new(x, y, z)
+    glam::Vec3A::new(x, y, z)
 }
 
-pub fn reflect(i: glam::DVec3, n: glam::DVec3) -> glam::DVec3
+pub fn reflect(i: glam::Vec3A, n: glam::Vec3A) -> glam::Vec3A
 {
-    i - 2.0 * glam::DVec3::dot(n, i) * n
+    i - 2.0 * glam::Vec3A::dot(n, i) * n
 }
 
-pub fn refract(i: glam::DVec3, n: glam::DVec3, eta: f64) -> glam::DVec3
+pub fn refract(i: glam::Vec3A, n: glam::Vec3A, eta: f32) -> glam::Vec3A
 {
-    let n_dot_i: f64 = glam::DVec3::dot(n, i);
+    let n_dot_i: f32 = glam::Vec3A::dot(n, i);
 
-    let k: f64 = 1.0 - eta * eta * (1.0 - n_dot_i * n_dot_i);
+    let k: f32 = 1.0 - eta * eta * (1.0 - n_dot_i * n_dot_i);
     if k < 0.0 {
-        glam::DVec3::new(0.0, 0.0, 0.0)
+        glam::Vec3A::new(0.0, 0.0, 0.0)
     } else {
         eta * i - (eta * n_dot_i + k.sqrt()) * n
     }

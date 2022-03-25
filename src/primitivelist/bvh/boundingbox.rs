@@ -1,10 +1,13 @@
+use crate::INFINITY;
 use crate::ray::Ray;
 use crate::utility::EPSILON;
 
+#[allow(clippy::upper_case_acronyms)]
+#[derive(Copy, Clone)]
 pub struct AABB
 {
-    pub minimum: glam::DVec3,
-    pub maximum: glam::DVec3,
+    pub minimum: glam::Vec3A,
+    pub maximum: glam::Vec3A,
 }
 
 impl Default for AABB
@@ -12,53 +15,64 @@ impl Default for AABB
     fn default() -> Self
     {
         Self {
-            minimum: glam::DVec3::new(0.0, 0.0, 0.0),
-            maximum: glam::DVec3::new(0.0, 0.0, 0.0),
+            minimum: glam::Vec3A::new(0.0, 0.0, 0.0),
+            maximum: glam::Vec3A::new(0.0, 0.0, 0.0),
         }
     }
 }
 
 impl AABB
 {
-    pub fn new(minimum: glam::DVec3, maximum: glam::DVec3) -> Self
+    pub fn new(minimum: glam::Vec3A, maximum: glam::Vec3A) -> Self
     {
         debug_assert!(minimum.le(&maximum));
 
         Self {
             minimum,
-            maximum: glam::DVec3::max(
+            maximum: glam::Vec3A::max(
                 maximum,
-                minimum + glam::DVec3::new(EPSILON, EPSILON, EPSILON),
+                minimum + glam::Vec3A::new(EPSILON, EPSILON, EPSILON),
             ),
         }
     }
 
-    pub fn intersect(&self, ray: &Ray, t_max: f64) -> bool
+    pub fn identity() -> Self
     {
-        let t_min: f64 = EPSILON;
-
-        let t0: glam::DVec3 = (self.minimum - ray.origin) * ray.inv_direction;
-        let t1: glam::DVec3 = (self.maximum - ray.origin) * ray.inv_direction;
-
-        let t_smaller: glam::DVec3 = glam::DVec3::min(t0, t1);
-        let t_bigger: glam::DVec3 = glam::DVec3::max(t0, t1);
-
-        //tMin < tMax
-        t_min.max(t_smaller.max_element()) < t_max.min(t_bigger.min_element())
+        Self {
+            minimum: glam::Vec3A::new(INFINITY, INFINITY, INFINITY),
+            maximum: glam::Vec3A::new(-INFINITY, -INFINITY, -INFINITY),
+        }
     }
 
-    pub fn intersect_t(&self, ray: &Ray, t_max: f64) -> Option<f64>
+    pub fn surface_area(&self) -> f32
     {
-        let t_min: f64 = EPSILON;
+        let v: glam::Vec3A = self.maximum - self.minimum;
 
-        let t0: glam::DVec3 = (self.minimum - ray.origin) * ray.inv_direction;
-        let t1: glam::DVec3 = (self.maximum - ray.origin) * ray.inv_direction;
+        2.0 * (v.x * (v.y + v.z) + v.y * (v.x + v.z) + v.z * (v.y + v.x))
+    }
 
-        let t_smaller: glam::DVec3 = glam::DVec3::min(t0, t1);
-        let t_bigger: glam::DVec3 = glam::DVec3::max(t0, t1);
+    pub fn intersect(&self, ray: &Ray, t_max: f32) -> bool
+    {
+        let t0: glam::Vec3A = (self.minimum - ray.origin) * ray.inv_direction;
+        let t1: glam::Vec3A = (self.maximum - ray.origin) * ray.inv_direction;
 
-        let t: f64 = t_min.max(t_smaller.max_element());
-        if t < t_max.min(t_bigger.min_element()) {
+        let t_smaller: glam::Vec4 = glam::Vec3A::min(t0, t1).extend(EPSILON);
+        let t_bigger: glam::Vec4 = glam::Vec3A::max(t0, t1).extend(t_max);
+
+        //tMin < tMax
+        t_smaller.max_element() < t_bigger.min_element()
+    }
+
+    pub fn intersect_t(&self, ray: &Ray, t_max: f32) -> Option<f32>
+    {
+        let t0: glam::Vec3A = (self.minimum - ray.origin) * ray.inv_direction;
+        let t1: glam::Vec3A = (self.maximum - ray.origin) * ray.inv_direction;
+
+        let t_smaller: glam::Vec4 = glam::Vec3A::min(t0, t1).extend(EPSILON);
+        let t_bigger: glam::Vec4 = glam::Vec3A::max(t0, t1).extend(t_max);
+
+        let t: f32 = t_smaller.max_element();
+        if t < t_bigger.min_element() {
             Some(t)
         } else {
             None
@@ -68,7 +82,7 @@ impl AABB
 
 pub fn surrounding_box(a: &AABB, b: &AABB) -> AABB
 {
-    let minimum: glam::DVec3 = glam::DVec3::min(a.minimum, b.minimum);
-    let maximum: glam::DVec3 = glam::DVec3::max(a.maximum, b.maximum);
+    let minimum: glam::Vec3A = glam::Vec3A::min(a.minimum, b.minimum);
+    let maximum: glam::Vec3A = glam::Vec3A::max(a.maximum, b.maximum);
     AABB::new(minimum, maximum)
 }

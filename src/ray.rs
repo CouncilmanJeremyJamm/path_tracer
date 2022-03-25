@@ -1,13 +1,13 @@
 pub struct Ray
 {
-    pub origin: glam::DVec3,
-    pub direction: glam::DVec3,
-    pub inv_direction: glam::DVec3,
+    pub origin: glam::Vec3A,
+    pub direction: glam::Vec3A,
+    pub inv_direction: glam::Vec3A,
 }
 
 impl Ray
 {
-    pub fn new(o: glam::DVec3, d: glam::DVec3) -> Self
+    pub fn new(o: glam::Vec3A, d: glam::Vec3A) -> Self
     {
         Self {
             origin: o,
@@ -16,7 +16,7 @@ impl Ray
         }
     }
 
-    pub fn at(&self, t: f64) -> glam::DVec3
+    pub fn at(&self, t: f32) -> glam::Vec3A
     {
         self.origin + (self.direction * t)
     }
