@@ -7,10 +7,13 @@ pub fn generate_onb(normal: glam::Vec3A) -> glam::Mat3A
 
 pub fn generate_onb_ggx(v: glam::Vec3A) -> glam::Mat3A
 {
-    let t1: glam::Vec3A = if v.z < 0.9999 {
-        v.cross(glam::Vec3A::new(0.0, 0.0, 1.0)).normalize()
-    } else {
-        glam::Vec3A::new(1.0, 0.0, 0.0)
+    let t1: glam::Vec3A = if v.z < 0.9999
+    {
+        v.cross(glam::Vec3A::Z).normalize()
+    }
+    else
+    {
+        glam::Vec3A::X
     };
     let t2: glam::Vec3A = t1.cross(v);
 

@@ -9,7 +9,7 @@ opt-level = 1
 [dependencies.image]
 version = "0.24.1"
 default-features = false
-features = ["png"]
+features = ["jpeg", "png"]
 
 [dependencies.rand]
 version = "0.8.5"
@@ -22,4 +22,3 @@ default-features = false
 [dependencies]
 glam = "0.20.2"
 rayon = "1.5.1"
-tinybox = "0.2.0"

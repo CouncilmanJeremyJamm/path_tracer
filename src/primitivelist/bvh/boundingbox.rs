@@ -1,13 +1,13 @@
-use crate::INFINITY;
 use crate::ray::Ray;
 use crate::utility::EPSILON;
+use crate::INFINITY;
 
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Copy, Clone)]
 pub struct AABB
 {
-    pub minimum: glam::Vec3A,
-    pub maximum: glam::Vec3A,
+    minimum: glam::Vec3A,
+    maximum: glam::Vec3A,
 }
 
 impl Default for AABB
@@ -15,8 +15,8 @@ impl Default for AABB
     fn default() -> Self
     {
         Self {
-            minimum: glam::Vec3A::new(0.0, 0.0, 0.0),
-            maximum: glam::Vec3A::new(0.0, 0.0, 0.0),
+            minimum: glam::Vec3A::ZERO,
+            maximum: glam::Vec3A::ZERO,
         }
     }
 }
@@ -29,10 +29,7 @@ impl AABB
 
         Self {
             minimum,
-            maximum: glam::Vec3A::max(
-                maximum,
-                minimum + glam::Vec3A::new(EPSILON, EPSILON, EPSILON),
-            ),
+            maximum: glam::Vec3A::max(maximum, minimum + glam::Vec3A::new(EPSILON, EPSILON, EPSILON)),
         }
     }
 
@@ -44,11 +41,15 @@ impl AABB
         }
     }
 
+    pub fn compare(&self, other: &AABB, axis: u8) -> std::cmp::Ordering { self.minimum[axis as usize].total_cmp(&other.minimum[axis as usize]) }
+
+    pub fn length(&self) -> glam::Vec3A { self.maximum - self.minimum }
+
     pub fn surface_area(&self) -> f32
     {
         let v: glam::Vec3A = self.maximum - self.minimum;
 
-        2.0 * (v.x * (v.y + v.z) + v.y * (v.x + v.z) + v.z * (v.y + v.x))
+        2.0 * glam::Vec3A::dot(v, glam::Vec3A::new(v.y + v.z, v.x + v.z, v.x + v.y))
     }
 
     pub fn intersect(&self, ray: &Ray, t_max: f32) -> bool
@@ -72,11 +73,7 @@ impl AABB
         let t_bigger: glam::Vec4 = glam::Vec3A::max(t0, t1).extend(t_max);
 
         let t: f32 = t_smaller.max_element();
-        if t < t_bigger.min_element() {
-            Some(t)
-        } else {
-            None
-        }
+        (t < t_bigger.min_element()).then_some(t)
     }
 }
 

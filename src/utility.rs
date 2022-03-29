@@ -1,10 +1,7 @@
 pub const EPSILON: f32 = 5e-04;
 pub const INFINITY: f32 = f32::INFINITY;
 
-pub fn random_f32() -> f32
-{
-    rand::random::<f32>()
-}
+pub fn random_f32() -> f32 { rand::random::<f32>() }
 
 pub fn random_cosine_vector() -> glam::Vec3A
 {
@@ -19,19 +16,19 @@ pub fn random_cosine_vector() -> glam::Vec3A
     glam::Vec3A::new(x, y, z)
 }
 
-pub fn reflect(i: glam::Vec3A, n: glam::Vec3A) -> glam::Vec3A
-{
-    i - 2.0 * glam::Vec3A::dot(n, i) * n
-}
+pub fn reflect(i: glam::Vec3A, n: glam::Vec3A) -> glam::Vec3A { i - 2.0 * glam::Vec3A::dot(n, i) * n }
 
 pub fn refract(i: glam::Vec3A, n: glam::Vec3A, eta: f32) -> glam::Vec3A
 {
     let n_dot_i: f32 = glam::Vec3A::dot(n, i);
 
     let k: f32 = 1.0 - eta * eta * (1.0 - n_dot_i * n_dot_i);
-    if k < 0.0 {
-        glam::Vec3A::new(0.0, 0.0, 0.0)
-    } else {
+    if k < 0.0
+    {
+        glam::Vec3A::ZERO
+    }
+    else
+    {
         eta * i - (eta * n_dot_i + k.sqrt()) * n
     }
 }

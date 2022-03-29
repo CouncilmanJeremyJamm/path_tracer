@@ -1,1 +1,5 @@
 brace_style = "AlwaysNextLine"
+control_brace_style = "AlwaysNextLine"
+fn_single_line = true
+imports-granularity = "crate"
+max_width = 150
