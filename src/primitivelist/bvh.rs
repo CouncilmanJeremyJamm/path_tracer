@@ -35,12 +35,11 @@ fn create_bounding_box(object_info: &[PrimitiveInfo]) -> AABB
         .fold(AABB::identity(), |a: AABB, b: &PrimitiveInfo| surrounding_box(&a, &b.bounding_box))
 }
 
-#[derive(Clone)]
 pub(super) enum NodeType
 {
     Leaf
     {
-        primitive_indices: Vec<u32>, num_objects: u32
+        primitive_indices: Vec<u32>
     },
     Branch
     {
@@ -48,7 +47,6 @@ pub(super) enum NodeType
     },
 }
 
-#[derive(Clone)]
 pub(super) struct BVHNode
 {
     pub(crate) bounding_box: AABB,
@@ -69,7 +67,6 @@ impl BVHNode
                 bounding_box: object_info[0].bounding_box,
                 node_type: NodeType::Leaf {
                     primitive_indices: vec![object_info[0].primitive_index],
-                    num_objects: 1,
                 },
             }
         }
@@ -131,7 +128,6 @@ impl BVHNode
                     bounding_box,
                     node_type: NodeType::Leaf {
                         primitive_indices: object_info.iter().map(|a| a.primitive_index).collect(),
-                        num_objects: object_span as u32,
                     },
                 }
             }

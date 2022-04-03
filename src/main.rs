@@ -133,18 +133,25 @@ fn estimate_direct(r: &Ray, hit_info: &HitInfo, mat: &(dyn Material + Sync + Sen
     //Sample ray from BSDF
     let material_ray: Ray = Ray::new(o, mat.scatter_direction(r.direction, hit_info.normal, hit_info.front_facing));
 
-    if let Some((material_hi, intersected)) = lights.intersect(&material_ray, INFINITY)
+    if !material_ray.direction.is_nan()
     {
-        if !world.any_intersect(&material_ray, material_hi.t * (1.0 - EPSILON))
+        if let Some((material_hi, intersected)) = lights.intersect(&material_ray, INFINITY)
         {
-            let cosine: f32 = glam::Vec3A::dot(material_ray.direction, material_hi.normal).abs();
-            let light_pdf: f32 = material_hi.t * material_hi.t / (cosine * intersected.area() * (num_lights as f32));
+            if !world.any_intersect(&material_ray, material_hi.t * (1.0 - EPSILON))
+            {
+                let cosine: f32 = glam::Vec3A::dot(material_ray.direction, material_hi.normal).abs();
+                let light_pdf: f32 = material_hi.t * material_hi.t / (cosine * intersected.area() * (num_lights as f32));
 
-            let material_info: BsdfPdf = mat.get_brdf_pdf(incoming, material_ray.direction, hit_info);
+                let material_info: BsdfPdf = mat.get_brdf_pdf(incoming, material_ray.direction, hit_info);
 
-            let weight: f32 = power_heuristic(material_info.pdf, light_pdf);
-            direct += intersected.material.get_emitted() * weight * mat.get_weakening(material_ray.direction, hit_info.normal) * material_info.bsdf
-                / material_info.pdf;
+                if material_info.pdf > 1e-10
+                {
+                    let weight: f32 = power_heuristic(material_info.pdf, light_pdf);
+                    direct +=
+                        intersected.material.get_emitted() * weight * mat.get_weakening(material_ray.direction, hit_info.normal) * material_info.bsdf
+                            / material_info.pdf;
+                }
+            }
         }
     }
 
@@ -164,41 +171,37 @@ fn integrate(mut r: Ray, world: &PrimitiveList, lights: &PrimitiveList, env: &Im
         {
             let wi: glam::Vec3A = -r.direction;
 
-            if object.material.is_emissive()
+            if object.material.is_emissive() && (!ENABLE_NEE || last_delta || b == 0)
             {
-                accumulated += if !ENABLE_NEE || last_delta || b == 0
-                {
-                    object.material.get_emitted() * path_weight
-                }
-                else
-                {
-                    glam::Vec3A::ZERO
-                };
+                accumulated += object.material.get_emitted() * path_weight;
                 break;
             }
             else
             {
                 let is_delta: bool = object.material.is_delta();
 
-                accumulated += if !ENABLE_NEE || is_delta
+                if ENABLE_NEE && !is_delta
                 {
-                    glam::Vec3A::ZERO
+                    accumulated += path_weight * estimate_direct(&r, &hit_info, object.material, world, lights);
                 }
-                else
-                {
-                    path_weight * estimate_direct(&r, &hit_info, object.material, world, lights)
-                };
 
                 r = Ray::new(
                     r.at(hit_info.t),
                     object.material.scatter_direction(r.direction, hit_info.normal, hit_info.front_facing),
                 );
 
+                if r.direction.is_nan()
+                {
+                    break;
+                }
+
                 let material_info: BsdfPdf = object.material.get_brdf_pdf(wi, r.direction, &hit_info);
 
-                // if material_info.pdf <= 0.0 {
-                //     break;
-                // }
+                if material_info.pdf < 1e-10
+                {
+                    //println!("Invalid PDF, returning early");
+                    break;
+                }
 
                 path_weight *= object.material.get_weakening(r.direction, hit_info.normal) * material_info.bsdf / material_info.pdf;
 
@@ -264,7 +267,14 @@ fn integrate(mut r: Ray, world: &PrimitiveList, lights: &PrimitiveList, env: &Im
         }
     }
 
-    accumulated
+    if accumulated.is_finite()
+    {
+        accumulated
+    }
+    else
+    {
+        glam::Vec3A::ZERO
+    }
 }
 
 fn main()
@@ -279,34 +289,35 @@ fn main()
     let diffuse_green = Lambertian::new(glam::Vec3A::new(0.12, 0.45, 0.15));
     let diffuse_red = Lambertian::new(glam::Vec3A::new(0.65, 0.05, 0.05));
     let diffuse_blue = Lambertian::new(glam::Vec3A::new(0.05, 0.05, 0.25));
-    let ggx_blue = GGX_Metal::new(glam::Vec3A::new(0.05, 0.05, 0.25), 0.4);
+    let ggx_blue = GGX_Metal::new(glam::Vec3A::new(0.1, 0.1, 0.45), 0.4);
     let ggx_blue_2 = GGX_Dielectric::new(glam::Vec3A::new(0.05, 0.05, 0.05), glam::Vec3A::new(0.95, 0.95, 0.95), 1.5, 0.5);
     let glass = Dielectric::new(glam::Vec3A::new(0.7, 0.7, 0.7), 1.5);
 
     let light = Emissive::new(glam::Vec3A::new(10.0, 10.0, 10.0));
 
     //Models and BVHs
-    println!("Loading models, building BVHs...");
+    println!("Loading models, building BVHs...\n");
 
     let lights_model: Model = Model::new("models/cornell/cb_light.obj", &light);
-    let mut lights: PrimitiveList = PrimitiveList::new();
-    lights.add_models(Vec::from([lights_model]));
+    let lights: PrimitiveList = PrimitiveList::new(vec![lights_model]);
 
-    let world_models: Vec<Model> = Vec::from([
+    let world_models: Vec<Model> = vec![
+        Model::new("models/cornell/cb_light.obj", &light),
         Model::new("models/cornell/cb_main.obj", &diffuse_gray),
         Model::new("models/cornell/cb_right.obj", &diffuse_red),
         Model::new("models/cornell/cb_left.obj", &diffuse_green),
         //Model::new("models/cornell/cb_box_tall.obj", &diffuse_gray),
-        Model::new("models/cornell/cb_box_short.obj", &diffuse_gray),
+        //Model::new("models/cornell/cb_box_short.obj", &diffuse_gray),
         //Model::new("models/sphere_offset.obj", &glass),
-        Model::new("models/zenobia.obj", &ggx_blue),
-    ]);
+        Model::new("models/zenobia.obj", &diffuse_gray),
+        Model::new("models/cornell/dragon.obj", &ggx_blue),
+        //Model::new("models/sphere.obj", &ggx_blue_2),
+    ];
 
-    let mut world: PrimitiveList = PrimitiveList::copy(&lights);
-    world.add_models(world_models);
+    let world: PrimitiveList = PrimitiveList::new(world_models);
 
     //Camera
-    println!("Initialising camera...");
+    println!("\nInitialising camera...");
     let look_from: glam::Vec3A = glam::Vec3A::new(0.0, 50.0, 1000.0);
     let look_at: glam::Vec3A = glam::Vec3A::new(0.0, 50.0, 0.0);
     let up_vector: glam::Vec3A = glam::Vec3A::Y;

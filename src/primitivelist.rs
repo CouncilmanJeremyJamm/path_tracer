@@ -1,11 +1,11 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader};
+use std::iter::zip;
 
 use rayon::prelude::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
 use crate::primitive::model::{Model, Vertex, VertexRef};
 use crate::primitive::Triangle;
-use crate::primitivelist::bvh::boundingbox::AABB;
 use crate::primitivelist::bvh::{BVHNode, NodeType, PrimitiveInfo};
 use crate::{HitInfo, Ray};
 
@@ -110,53 +110,29 @@ pub struct PrimitiveList<'a>
 
 impl<'a> PrimitiveList<'a>
 {
-    pub fn new() -> Self
+    pub fn new(models: Vec<Model<'a>>) -> Self
     {
-        Self {
-            objects: vec![],
-            bvh: BVHNode {
-                bounding_box: AABB::default(),
-                node_type: NodeType::Leaf {
-                    primitive_indices: vec![],
-                    num_objects: 0,
-                },
-            },
-        }
-    }
+        let model_timer = std::time::Instant::now();
 
-    pub fn copy(pl: &'a PrimitiveList) -> Self
-    {
-        Self {
-            objects: pl.objects.clone(),
-            bvh: pl.bvh.clone(),
-        }
-    }
+        let vertices: Vec<Vec<Vertex>> = models.par_iter().map(|model| load_obj(model.file_path)).collect();
 
-    fn add_model(&mut self, model: Model<'a>)
-    {
-        let vertices: Vec<Vertex> = load_obj(model.file_path);
+        let objects: Vec<Triangle<'a>> = zip(models.iter(), vertices.iter())
+            .flat_map(|(model, model_vertices)| model_vertices.array_chunks::<3>().map(|v| Triangle::new(v, model.material)))
+            .collect();
 
-        self.objects
-            .extend(vertices.array_chunks::<3>().map(|v| Triangle::new(v, model.material)));
-    }
+        println!("Finished loading models, took {} \tms", model_timer.elapsed().as_millis());
 
-    pub fn add_models(&mut self, models: Vec<Model<'a>>)
-    {
-        for model in models
-        {
-            self.add_model(model);
-        }
-
-        let mut object_info: Vec<PrimitiveInfo> = self
-            .objects
+        let mut object_info: Vec<PrimitiveInfo> = objects
             .par_iter()
             .enumerate()
             .map(|tuple: (usize, &Triangle)| -> PrimitiveInfo { PrimitiveInfo::new(tuple.1.create_bounding_box(), tuple.0 as u32) })
             .collect();
 
-        let begin = std::time::Instant::now();
-        self.bvh = BVHNode::generate_bvh(object_info.as_mut_slice(), 4);
-        println!("Finished building a BVH, took {} ms", begin.elapsed().as_millis());
+        let bvh_timer = std::time::Instant::now();
+        let bvh: BVHNode = BVHNode::generate_bvh(object_info.as_mut_slice(), 4);
+        println!("Finished building a BVH, took {} \tms", bvh_timer.elapsed().as_millis());
+
+        Self { objects, bvh }
     }
 
     pub fn intersect(&self, r: &Ray, mut t_max: f32) -> Option<(HitInfo, &Triangle)>
@@ -205,10 +181,7 @@ impl<'a> PrimitiveList<'a>
                         stack.push((right, t_enter_right));
                     }
                 }
-                NodeType::Leaf {
-                    primitive_indices,
-                    num_objects,
-                } if *num_objects == 1 =>
+                NodeType::Leaf { primitive_indices } if primitive_indices.len() == 1 =>
                 //Fast path for single child
                 {
                     let primitive: &Triangle = &self.objects[primitive_indices[0] as usize];
@@ -218,10 +191,7 @@ impl<'a> PrimitiveList<'a>
                         closest = Some((intersection, primitive));
                     }
                 }
-                NodeType::Leaf {
-                    primitive_indices,
-                    num_objects: _,
-                } =>
+                NodeType::Leaf { primitive_indices } =>
                 {
                     if let Some(intersection) = primitive_indices
                         .iter()
@@ -255,10 +225,7 @@ impl<'a> PrimitiveList<'a>
                     stack.push(left);
                     stack.push(right);
                 }
-                NodeType::Leaf {
-                    primitive_indices,
-                    num_objects,
-                } if *num_objects == 1 =>
+                NodeType::Leaf { primitive_indices } if primitive_indices.len() == 1 =>
                 //Fast path for single child
                 {
                     if self.objects[primitive_indices[0] as usize].intersect_bool(r, t_max)
@@ -266,10 +233,7 @@ impl<'a> PrimitiveList<'a>
                         return true;
                     }
                 }
-                NodeType::Leaf {
-                    primitive_indices,
-                    num_objects: _,
-                } =>
+                NodeType::Leaf { primitive_indices } =>
                 {
                     if primitive_indices.iter().any(|i| self.objects[*i as usize].intersect_bool(r, t_max))
                     {

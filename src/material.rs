@@ -251,6 +251,12 @@ impl Material for GGX_Dielectric
 
         //Generate half-vector from the GGX distribution
         let h: glam::Vec3A = GGX::generate_half_vector(direction, normal, self.a);
+        //let h: glam::Vec3A = if -glam::Vec3A::dot(_h, direction) > 0.0 { _h } else { -_h };
+
+        if -glam::Vec3A::dot(h, direction) < 1e-10
+        {
+            return glam::Vec3A::NAN;
+        }
 
         //Reflect or refract using the half-vector as the normal
         let cosine: f32 = -glam::Vec3A::dot(direction, h);
@@ -320,7 +326,7 @@ impl Material for GGX_Dielectric
         {
             //Incident ray refracted
             let _h: glam::Vec3A = ((eta * wi) + wo).normalize();
-            let h: glam::Vec3A = if glam::Vec3A::dot(hi.normal, _h) > 0.0 { _h } else { -_h };
+            let h: glam::Vec3A = if glam::Vec3A::dot(wo, _h) > 0.0 { _h } else { -_h };
             let d: f32 = GGX::d(hi.normal, h, self.a);
 
             let i_dot_h: f32 = glam::Vec3A::dot(wi, h);
@@ -330,7 +336,7 @@ impl Material for GGX_Dielectric
             let x: f32 = (i_dot_h * o_dot_h).abs();
             let y: f32 = (glam::Vec3A::dot(wi, hi.normal) * glam::Vec3A::dot(wo, hi.normal)).abs();
             //TODO: fix i dot h
-            let f: f32 = self.f(-i_dot_h, f0);
+            let f: f32 = self.f(o_dot_h, f0);
 
             let z: f32 = (1.0 - f) * self.g(wi, wo, h, hi.normal) * d;
             let w: f32 = (eta * i_dot_h) + o_dot_h;
@@ -341,8 +347,12 @@ impl Material for GGX_Dielectric
             let ja: f32 = o_dot_h.abs();
             let jb: f32 = w;
             let jacobian: f32 = ja / (jb * jb);
-            let pdf: f32 = d * (1.0 - f) * glam::Vec3A::dot(h, hi.normal) * jacobian;
-            //println!("{}", f);
+            let pdf: f32 = d * (1.0 - f) * glam::Vec3A::dot(h, hi.normal).abs() * jacobian;
+            //println!("{}", pdf);
+            // if pdf < 0.0
+            // {
+            //     println!("BAD REFRACTION PDF");
+            // }
             //Transmission is affected by material colour
             BsdfPdf::new(self.colour * btdf, pdf)
         }

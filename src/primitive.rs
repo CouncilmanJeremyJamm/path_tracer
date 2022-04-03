@@ -6,7 +6,6 @@ use crate::Material;
 
 pub mod model;
 
-#[derive(Clone)]
 pub struct Triangle<'a>
 {
     vertices: [Vertex; 3],
