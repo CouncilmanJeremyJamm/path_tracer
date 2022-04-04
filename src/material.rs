@@ -1,8 +1,9 @@
 use glam::Vec3A;
+use nanorand::tls::TlsWyRand;
+use nanorand::Rng;
 
 use crate::onb::{generate_onb, generate_onb_ggx};
 use crate::primitive::model::HitInfo;
-use crate::random_f32;
 use crate::ray::Ray;
 use crate::utility::{random_cosine_vector, reflect, refract};
 
@@ -23,7 +24,7 @@ impl BsdfPdf
 
 pub trait Material
 {
-    fn scatter_direction(&self, incoming: glam::Vec3A, normal: glam::Vec3A, front_facing: bool) -> glam::Vec3A;
+    fn scatter_direction(&self, rng: &mut TlsWyRand, incoming: glam::Vec3A, normal: glam::Vec3A, front_facing: bool) -> glam::Vec3A;
     fn get_brdf_pdf(&self, incoming: glam::Vec3A, outgoing: glam::Vec3A, hi: &HitInfo) -> BsdfPdf;
     fn get_emitted(&self) -> glam::Vec3A { glam::Vec3A::ZERO }
     fn get_transmission(&self, _r: Ray, _t: f32) -> glam::Vec3A { glam::Vec3A::ZERO }
@@ -57,9 +58,9 @@ impl Lambertian
 
 impl Material for Lambertian
 {
-    fn scatter_direction(&self, _incoming: glam::Vec3A, normal: glam::Vec3A, _front_facing: bool) -> glam::Vec3A
+    fn scatter_direction(&self, rng: &mut TlsWyRand, _: glam::Vec3A, normal: glam::Vec3A, _: bool) -> glam::Vec3A
     {
-        generate_onb(normal) * random_cosine_vector()
+        generate_onb(normal) * random_cosine_vector(rng)
     }
 
     fn get_brdf_pdf(&self, _incoming: glam::Vec3A, outgoing: glam::Vec3A, hi: &HitInfo) -> BsdfPdf
@@ -83,7 +84,7 @@ impl Emissive
 
 impl Material for Emissive
 {
-    fn scatter_direction(&self, _: glam::Vec3A, _: glam::Vec3A, _: bool) -> glam::Vec3A { glam::Vec3A::ZERO }
+    fn scatter_direction(&self, _: &mut TlsWyRand, _: glam::Vec3A, _: glam::Vec3A, _: bool) -> glam::Vec3A { glam::Vec3A::ZERO }
 
     fn get_brdf_pdf(&self, _: glam::Vec3A, _: glam::Vec3A, _: &HitInfo) -> BsdfPdf { BsdfPdf::new(self.emitted, 1.0) }
 
@@ -104,7 +105,7 @@ impl GGX
         a * a * std::f32::consts::FRAC_1_PI / (x * x)
     }
 
-    fn generate_half_vector(incoming: glam::Vec3A, normal: glam::Vec3A, a: f32) -> glam::Vec3A
+    fn generate_half_vector(rng: &mut TlsWyRand, incoming: glam::Vec3A, normal: glam::Vec3A, a: f32) -> glam::Vec3A
     {
         let onb_a: glam::Mat3A = generate_onb(normal);
 
@@ -114,8 +115,8 @@ impl GGX
         //Can't use generate_onb() for this, use implementation from the paper instead
         let onb_b: glam::Mat3A = generate_onb_ggx(v);
 
-        let u1: f32 = random_f32();
-        let u2: f32 = random_f32();
+        let u1: f32 = rng.generate();
+        let u2: f32 = rng.generate();
 
         let _a: f32 = 1.0 / (1.0 + v.z);
         let condition: bool = u2 < _a; //If condition is true, sample from the tilted half-disk
@@ -181,10 +182,10 @@ impl GGX_Metal
 
 impl Material for GGX_Metal
 {
-    fn scatter_direction(&self, incoming: glam::Vec3A, normal: glam::Vec3A, _front_facing: bool) -> glam::Vec3A
+    fn scatter_direction(&self, rng: &mut TlsWyRand, incoming: glam::Vec3A, normal: glam::Vec3A, _front_facing: bool) -> glam::Vec3A
     {
         let direction: glam::Vec3A = incoming.normalize();
-        let h: glam::Vec3A = GGX::generate_half_vector(direction, normal, self.a);
+        let h: glam::Vec3A = GGX::generate_half_vector(rng, direction, normal, self.a);
 
         reflect(direction, h)
     }
@@ -245,12 +246,12 @@ impl GGX_Dielectric
 
 impl Material for GGX_Dielectric
 {
-    fn scatter_direction(&self, incoming: Vec3A, normal: Vec3A, front_facing: bool) -> glam::Vec3A
+    fn scatter_direction(&self, rng: &mut TlsWyRand, incoming: Vec3A, normal: Vec3A, front_facing: bool) -> glam::Vec3A
     {
         let direction: glam::Vec3A = incoming.normalize();
 
         //Generate half-vector from the GGX distribution
-        let h: glam::Vec3A = GGX::generate_half_vector(direction, normal, self.a);
+        let h: glam::Vec3A = GGX::generate_half_vector(rng, direction, normal, self.a);
         //let h: glam::Vec3A = if -glam::Vec3A::dot(_h, direction) > 0.0 { _h } else { -_h };
 
         if -glam::Vec3A::dot(h, direction) < 1e-10
@@ -277,7 +278,7 @@ impl Material for GGX_Dielectric
         //Source: https://agraphicsguynotes.com/posts/glass_material_simulated_by_microfacet_bxdf/
         let refracted: glam::Vec3A = refract(direction, h, eta);
 
-        if random_f32() < self.f(-glam::Vec3A::dot(refracted, h), f0)
+        if rng.generate::<f32>() < self.f(-glam::Vec3A::dot(refracted, h), f0)
         {
             reflect(direction, h)
         }
@@ -379,7 +380,7 @@ impl Dielectric
 
 impl Material for Dielectric
 {
-    fn scatter_direction(&self, incoming: Vec3A, normal: Vec3A, front_facing: bool) -> glam::Vec3A
+    fn scatter_direction(&self, rng: &mut TlsWyRand, incoming: Vec3A, normal: Vec3A, front_facing: bool) -> glam::Vec3A
     {
         let direction: glam::Vec3A = incoming.normalize();
         let cosine: f32 = -glam::Vec3A::dot(direction, normal);
@@ -388,7 +389,7 @@ impl Material for Dielectric
         let eta: f32 = if front_facing { self.ior.recip() } else { self.ior };
         let must_reflect: bool = eta * sine > 1.0;
 
-        if must_reflect || random_f32() < Self::f(cosine, eta)
+        if must_reflect || rng.generate::<f32>() < Self::f(cosine, eta)
         {
             reflect(direction, normal)
         }

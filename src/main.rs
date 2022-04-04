@@ -4,6 +4,8 @@
 extern crate core;
 
 use image::{DynamicImage, GenericImageView, ImageResult};
+use nanorand::tls::TlsWyRand;
+use nanorand::Rng;
 use rayon::prelude::*;
 
 use crate::camera::Camera;
@@ -12,7 +14,7 @@ use crate::primitive::model::{HitInfo, Model};
 use crate::primitive::Triangle;
 use crate::primitivelist::PrimitiveList;
 use crate::ray::Ray;
-use crate::utility::{random_f32, EPSILON, INFINITY};
+use crate::utility::{EPSILON, INFINITY};
 
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -89,24 +91,23 @@ fn map_colour(a: &glam::Vec3A) -> [u8; 3]
 
 fn pixel_to_vec3(p: image::Rgba<u8>) -> glam::Vec3A { glam::Vec3A::new(u8_to_float(p[0]), u8_to_float(p[1]), u8_to_float(p[2])) }
 
-fn estimate_direct(r: &Ray, hit_info: &HitInfo, mat: &(dyn Material + Sync + Send), world: &PrimitiveList, lights: &PrimitiveList) -> glam::Vec3A
+fn estimate_direct(
+    rng: &mut TlsWyRand,
+    r: &Ray,
+    hit_info: &HitInfo,
+    mat: &(dyn Material + Sync + Send),
+    world: &PrimitiveList,
+    lights: &PrimitiveList,
+) -> glam::Vec3A
 {
     let mut direct: glam::Vec3A = glam::Vec3A::ZERO;
     let incoming: glam::Vec3A = -r.direction;
 
     let num_lights: usize = lights.objects.len();
-    let mut light: &Triangle = &lights.objects[0];
+    let light: &Triangle = &lights.objects[nanorand::tls_rng().generate_range(0..num_lights)];
 
-    for l in 1..num_lights
-    {
-        if random_f32() < 1.0 / l as f32
-        {
-            light = &lights.objects[l];
-        }
-    }
-
-    let u: f32 = random_f32();
-    let v: f32 = random_f32() * (1.0 - u);
+    let u: f32 = rng.generate::<f32>();
+    let v: f32 = rng.generate::<f32>() * (1.0 - u);
     let point: glam::Vec3A = light.local_to_world(u, v);
 
     let o: glam::Vec3A = r.at(hit_info.t);
@@ -131,7 +132,7 @@ fn estimate_direct(r: &Ray, hit_info: &HitInfo, mat: &(dyn Material + Sync + Sen
     }
 
     //Sample ray from BSDF
-    let material_ray: Ray = Ray::new(o, mat.scatter_direction(r.direction, hit_info.normal, hit_info.front_facing));
+    let material_ray: Ray = Ray::new(o, mat.scatter_direction(rng, r.direction, hit_info.normal, hit_info.front_facing));
 
     if !material_ray.direction.is_nan()
     {
@@ -158,7 +159,14 @@ fn estimate_direct(r: &Ray, hit_info: &HitInfo, mat: &(dyn Material + Sync + Sen
     direct
 }
 
-fn integrate(mut r: Ray, world: &PrimitiveList, lights: &PrimitiveList, env: &ImageResult<DynamicImage>, max_bounces: u32) -> glam::Vec3A
+fn integrate(
+    rng: &mut TlsWyRand,
+    mut r: Ray,
+    world: &PrimitiveList,
+    lights: &PrimitiveList,
+    env: &ImageResult<DynamicImage>,
+    max_bounces: u32,
+) -> glam::Vec3A
 {
     let mut accumulated: glam::Vec3A = glam::Vec3A::ZERO;
     let mut path_weight: glam::Vec3A = glam::Vec3A::ONE;
@@ -182,12 +190,14 @@ fn integrate(mut r: Ray, world: &PrimitiveList, lights: &PrimitiveList, env: &Im
 
                 if ENABLE_NEE && !is_delta
                 {
-                    accumulated += path_weight * estimate_direct(&r, &hit_info, object.material, world, lights);
+                    accumulated += path_weight * estimate_direct(rng, &r, &hit_info, object.material, world, lights);
                 }
 
                 r = Ray::new(
                     r.at(hit_info.t),
-                    object.material.scatter_direction(r.direction, hit_info.normal, hit_info.front_facing),
+                    object
+                        .material
+                        .scatter_direction(rng, r.direction, hit_info.normal, hit_info.front_facing),
                 );
 
                 if r.direction.is_nan()
@@ -256,7 +266,7 @@ fn integrate(mut r: Ray, world: &PrimitiveList, lights: &PrimitiveList, env: &Im
         if b > 3
         {
             let survive_prob: f32 = path_weight.max_element().clamp(0.0001, 0.9999);
-            if random_f32() > survive_prob
+            if rng.generate::<f32>() > survive_prob
             {
                 break;
             }
@@ -345,7 +355,8 @@ fn main()
                     let v: f32 = (y as f32 + offset.y) / (IMAGE_HEIGHT as f32);
 
                     let ray: Ray = cam.create_ray(u, v);
-                    accumulated + integrate(ray, &world, &lights, &env, MAX_BOUNCES)
+                    let mut rng = nanorand::tls_rng();
+                    accumulated + integrate(&mut rng, ray, &world, &lights, &env, MAX_BOUNCES)
                 })
                 / (SAMPLES_PER_PIXEL as f32)
         })

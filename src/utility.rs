@@ -1,18 +1,13 @@
+use nanorand::tls::TlsWyRand;
 use nanorand::Rng;
 
 pub const EPSILON: f32 = 5e-04;
 pub const INFINITY: f32 = f32::INFINITY;
 
-pub fn random_f32() -> f32
+pub fn random_cosine_vector(rng: &mut TlsWyRand) -> glam::Vec3A
 {
-    let mut rng = nanorand::tls_rng();
-    rng.generate()
-}
-
-pub fn random_cosine_vector() -> glam::Vec3A
-{
-    let r1: f32 = random_f32();
-    let r2: f32 = random_f32();
+    let r1: f32 = rng.generate();
+    let r2: f32 = rng.generate();
     let z: f32 = (1.0 - r2).sqrt();
 
     let phi: f32 = std::f32::consts::TAU * r1;
