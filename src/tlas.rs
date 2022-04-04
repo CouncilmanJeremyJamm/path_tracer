@@ -127,7 +127,7 @@ impl<'a> TLAS<'a>
         }
     }
 
-    pub fn random_primitive(&self, rng: &mut TlsWyRand) -> (usize, &(dyn Material + Sync + Send), &Triangle)
+    pub fn random_primitive(&self, rng: &mut TlsWyRand) -> (usize, &(dyn Material), &Triangle)
     {
         let blas: &BLAS = &self.blas_vec[rng.generate_range(0..self.blas_vec.len())];
 
@@ -138,7 +138,7 @@ impl<'a> TLAS<'a>
         )
     }
 
-    pub fn intersect(&self, r: &Ray, mut t_max: f32) -> Option<(HitInfo, &Triangle, &(dyn Material + Sync + Send))>
+    pub fn intersect(&self, r: &Ray, mut t_max: f32) -> Option<(HitInfo, &Triangle, &(dyn Material))>
     {
         if !self.bvh.bounding_box.intersect(r, t_max)
         {
@@ -146,7 +146,7 @@ impl<'a> TLAS<'a>
         }
 
         let mut stack: Vec<(&TLASNode, f32)> = vec![(&self.bvh, 0.0)];
-        let mut closest: Option<(HitInfo, &Triangle, &(dyn Material + Sync + Send))> = None;
+        let mut closest: Option<(HitInfo, &Triangle, &(dyn Material))> = None;
 
         while let Some((current, t_enter)) = stack.pop()
         {

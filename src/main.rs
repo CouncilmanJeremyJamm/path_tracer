@@ -1,6 +1,5 @@
-#![feature(total_cmp)]
-#![feature(array_chunks)]
-#![feature(bool_to_option)]
+#![allow(clippy::upper_case_acronyms)]
+#![feature(array_chunks, total_cmp, bool_to_option)]
 extern crate core;
 
 use image::{DynamicImage, GenericImageView, ImageResult};
@@ -91,7 +90,7 @@ fn map_colour(a: &glam::Vec3A) -> [u8; 3]
 
 fn pixel_to_vec3(p: image::Rgba<u8>) -> glam::Vec3A { glam::Vec3A::new(u8_to_float(p[0]), u8_to_float(p[1]), u8_to_float(p[2])) }
 
-fn estimate_direct(rng: &mut TlsWyRand, r: &Ray, hit_info: &HitInfo, mat: &(dyn Material + Sync + Send), world: &TLAS, lights: &TLAS) -> glam::Vec3A
+fn estimate_direct(rng: &mut TlsWyRand, r: &Ray, hit_info: &HitInfo, mat: &(dyn Material), world: &TLAS, lights: &TLAS) -> glam::Vec3A
 {
     let mut direct: glam::Vec3A = glam::Vec3A::ZERO;
     let incoming: glam::Vec3A = -r.direction;
@@ -281,8 +280,8 @@ fn main()
     let diffuse_green = Lambertian::new(glam::Vec3A::new(0.12, 0.45, 0.15));
     let diffuse_red = Lambertian::new(glam::Vec3A::new(0.65, 0.05, 0.05));
     let diffuse_blue = Lambertian::new(glam::Vec3A::new(0.05, 0.05, 0.25));
-    let ggx_blue = GGX_Metal::new(glam::Vec3A::new(0.1, 0.1, 0.45), 0.4);
-    let ggx_blue_2 = GGX_Dielectric::new(glam::Vec3A::new(0.05, 0.05, 0.05), glam::Vec3A::new(0.95, 0.95, 0.95), 1.5, 0.5);
+    let ggx_blue = GGXMetal::new(glam::Vec3A::new(0.1, 0.1, 0.45), 0.4);
+    let ggx_blue_2 = GGXDielectric::new(glam::Vec3A::new(0.05, 0.05, 0.05), glam::Vec3A::new(0.95, 0.95, 0.95), 1.5, 0.5);
     let glass = Dielectric::new(glam::Vec3A::new(0.7, 0.7, 0.7), 1.5);
 
     let light = Emissive::new(glam::Vec3A::new(10.0, 10.0, 10.0));

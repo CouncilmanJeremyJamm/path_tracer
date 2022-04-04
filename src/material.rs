@@ -22,7 +22,7 @@ impl BsdfPdf
     }
 }
 
-pub trait Material
+pub trait Material: Sync + Send
 {
     fn scatter_direction(&self, rng: &mut TlsWyRand, incoming: glam::Vec3A, normal: glam::Vec3A, front_facing: bool) -> glam::Vec3A;
     fn get_brdf_pdf(&self, incoming: glam::Vec3A, outgoing: glam::Vec3A, hi: &HitInfo) -> BsdfPdf;
@@ -93,7 +93,6 @@ impl Material for Emissive
     fn is_emissive(&self) -> bool { true }
 }
 
-#[allow(clippy::upper_case_acronyms)]
 struct GGX {}
 impl GGX
 {
@@ -141,14 +140,13 @@ impl GGX
 }
 
 //TODO: pack colour and a
-pub struct GGX_Metal
+pub struct GGXMetal
 {
     colour: glam::Vec3A,
     a: f32,
 }
 
-#[allow(clippy::upper_case_acronyms)]
-impl GGX_Metal
+impl GGXMetal
 {
     fn f(&self, v_dot_h: f32) -> glam::Vec3A { self.colour + ((1.0 - self.colour) * (1.0 - v_dot_h).powi(5)) }
 
@@ -180,7 +178,7 @@ impl GGX_Metal
     }
 }
 
-impl Material for GGX_Metal
+impl Material for GGXMetal
 {
     fn scatter_direction(&self, rng: &mut TlsWyRand, incoming: glam::Vec3A, normal: glam::Vec3A, _front_facing: bool) -> glam::Vec3A
     {
@@ -212,8 +210,7 @@ impl Material for GGX_Metal
     }
 }
 
-#[allow(clippy::upper_case_acronyms)]
-pub struct GGX_Dielectric
+pub struct GGXDielectric
 {
     absorption: glam::Vec3A,
     colour: glam::Vec3A,
@@ -221,7 +218,7 @@ pub struct GGX_Dielectric
     a: f32,
 }
 
-impl GGX_Dielectric
+impl GGXDielectric
 {
     fn f(&self, v_dot_h: f32, f0: f32) -> f32 { f0 + ((1.0 - f0) * (1.0 - v_dot_h).powi(5)) }
 
@@ -244,7 +241,7 @@ impl GGX_Dielectric
     pub fn new(absorption: glam::Vec3A, colour: glam::Vec3A, ior: f32, a: f32) -> Self { Self { absorption, colour, ior, a } }
 }
 
-impl Material for GGX_Dielectric
+impl Material for GGXDielectric
 {
     fn scatter_direction(&self, rng: &mut TlsWyRand, incoming: Vec3A, normal: Vec3A, front_facing: bool) -> glam::Vec3A
     {

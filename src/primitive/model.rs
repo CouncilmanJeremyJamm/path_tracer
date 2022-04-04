@@ -24,12 +24,12 @@ pub struct VertexRef
 pub struct Model<'c>
 {
     pub file_path: &'c std::path::Path,
-    pub material: &'c (dyn material::Material + Sync + Send),
+    pub material: &'c (dyn material::Material),
 }
 
 impl<'c> Model<'c>
 {
-    pub fn new(file_path: &'c str, material: &'c (dyn material::Material + Sync + Send)) -> Self
+    pub fn new(file_path: &'c str, material: &'c (dyn material::Material)) -> Self
     {
         Self {
             file_path: std::path::Path::new(file_path),

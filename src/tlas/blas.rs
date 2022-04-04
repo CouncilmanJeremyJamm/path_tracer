@@ -104,7 +104,7 @@ pub fn load_obj(path: &std::path::Path) -> Vec<Vertex>
 pub(super) struct BLAS<'a>
 {
     pub objects: Vec<Triangle>,
-    pub material: &'a (dyn Material + Sync + Send),
+    pub material: &'a (dyn Material),
     pub bvh: BLASNode,
 }
 
@@ -130,7 +130,7 @@ impl<'a> BLAS<'a>
         }
     }
 
-    pub fn intersect(&self, r: &Ray, mut t_max: f32) -> Option<(HitInfo, &Triangle, &(dyn Material + Sync + Send))>
+    pub fn intersect(&self, r: &Ray, mut t_max: f32) -> Option<(HitInfo, &Triangle, &(dyn Material))>
     {
         if !self.bvh.bounding_box.intersect(r, t_max)
         {
