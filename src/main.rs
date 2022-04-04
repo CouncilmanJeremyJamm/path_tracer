@@ -12,8 +12,8 @@ use crate::camera::Camera;
 use crate::material::*;
 use crate::primitive::model::{HitInfo, Model};
 use crate::primitive::Triangle;
-use crate::primitivelist::PrimitiveList;
 use crate::ray::Ray;
+use crate::tlas::TLAS;
 use crate::utility::{EPSILON, INFINITY};
 
 #[global_allocator]
@@ -23,8 +23,8 @@ mod camera;
 mod material;
 mod onb;
 mod primitive;
-mod primitivelist;
 mod ray;
+mod tlas;
 mod utility;
 
 const ASPECT_RATIO: f32 = 1.0;
@@ -91,20 +91,12 @@ fn map_colour(a: &glam::Vec3A) -> [u8; 3]
 
 fn pixel_to_vec3(p: image::Rgba<u8>) -> glam::Vec3A { glam::Vec3A::new(u8_to_float(p[0]), u8_to_float(p[1]), u8_to_float(p[2])) }
 
-fn estimate_direct(
-    rng: &mut TlsWyRand,
-    r: &Ray,
-    hit_info: &HitInfo,
-    mat: &(dyn Material + Sync + Send),
-    world: &PrimitiveList,
-    lights: &PrimitiveList,
-) -> glam::Vec3A
+fn estimate_direct(rng: &mut TlsWyRand, r: &Ray, hit_info: &HitInfo, mat: &(dyn Material + Sync + Send), world: &TLAS, lights: &TLAS) -> glam::Vec3A
 {
     let mut direct: glam::Vec3A = glam::Vec3A::ZERO;
     let incoming: glam::Vec3A = -r.direction;
 
-    let num_lights: usize = lights.objects.len();
-    let light: &Triangle = &lights.objects[nanorand::tls_rng().generate_range(0..num_lights)];
+    let (num_lights, light_material, light) = lights.random_primitive(rng);
 
     let u: f32 = rng.generate::<f32>();
     let v: f32 = rng.generate::<f32>() * (1.0 - u);
@@ -127,7 +119,7 @@ fn estimate_direct(
         if light_info.pdf > 0.0
         {
             let weight: f32 = power_heuristic(light_pdf, light_info.pdf);
-            direct += light.material.get_emitted() * weight * mat.get_weakening(light_ray.direction, hit_info.normal) * light_info.bsdf / light_pdf;
+            direct += light_material.get_emitted() * weight * mat.get_weakening(light_ray.direction, hit_info.normal) * light_info.bsdf / light_pdf;
         }
     }
 
@@ -136,7 +128,7 @@ fn estimate_direct(
 
     if !material_ray.direction.is_nan()
     {
-        if let Some((material_hi, intersected)) = lights.intersect(&material_ray, INFINITY)
+        if let Some((material_hi, intersected, material)) = lights.intersect(&material_ray, INFINITY)
         {
             if !world.any_intersect(&material_ray, material_hi.t * (1.0 - EPSILON))
             {
@@ -148,9 +140,8 @@ fn estimate_direct(
                 if material_info.pdf > 1e-10
                 {
                     let weight: f32 = power_heuristic(material_info.pdf, light_pdf);
-                    direct +=
-                        intersected.material.get_emitted() * weight * mat.get_weakening(material_ray.direction, hit_info.normal) * material_info.bsdf
-                            / material_info.pdf;
+                    direct += material.get_emitted() * weight * mat.get_weakening(material_ray.direction, hit_info.normal) * material_info.bsdf
+                        / material_info.pdf;
                 }
             }
         }
@@ -159,14 +150,7 @@ fn estimate_direct(
     direct
 }
 
-fn integrate(
-    rng: &mut TlsWyRand,
-    mut r: Ray,
-    world: &PrimitiveList,
-    lights: &PrimitiveList,
-    env: &ImageResult<DynamicImage>,
-    max_bounces: u32,
-) -> glam::Vec3A
+fn integrate(rng: &mut TlsWyRand, mut r: Ray, world: &TLAS, lights: &TLAS, env: &ImageResult<DynamicImage>, max_bounces: u32) -> glam::Vec3A
 {
     let mut accumulated: glam::Vec3A = glam::Vec3A::ZERO;
     let mut path_weight: glam::Vec3A = glam::Vec3A::ONE;
@@ -175,29 +159,27 @@ fn integrate(
 
     for b in 0..=max_bounces
     {
-        if let Some((hit_info, object)) = world.intersect(&r, INFINITY)
+        if let Some((hit_info, _, material)) = world.intersect(&r, INFINITY)
         {
             let wi: glam::Vec3A = -r.direction;
 
-            if object.material.is_emissive() && (!ENABLE_NEE || last_delta || b == 0)
+            if material.is_emissive() && (!ENABLE_NEE || last_delta || b == 0)
             {
-                accumulated += object.material.get_emitted() * path_weight;
+                accumulated += material.get_emitted() * path_weight;
                 break;
             }
             else
             {
-                let is_delta: bool = object.material.is_delta();
+                let is_delta: bool = material.is_delta();
 
                 if ENABLE_NEE && !is_delta
                 {
-                    accumulated += path_weight * estimate_direct(rng, &r, &hit_info, object.material, world, lights);
+                    accumulated += path_weight * estimate_direct(rng, &r, &hit_info, material, world, lights);
                 }
 
                 r = Ray::new(
                     r.at(hit_info.t),
-                    object
-                        .material
-                        .scatter_direction(rng, r.direction, hit_info.normal, hit_info.front_facing),
+                    material.scatter_direction(rng, r.direction, hit_info.normal, hit_info.front_facing),
                 );
 
                 if r.direction.is_nan()
@@ -205,7 +187,7 @@ fn integrate(
                     break;
                 }
 
-                let material_info: BsdfPdf = object.material.get_brdf_pdf(wi, r.direction, &hit_info);
+                let material_info: BsdfPdf = material.get_brdf_pdf(wi, r.direction, &hit_info);
 
                 if material_info.pdf < 1e-10
                 {
@@ -213,7 +195,7 @@ fn integrate(
                     break;
                 }
 
-                path_weight *= object.material.get_weakening(r.direction, hit_info.normal) * material_info.bsdf / material_info.pdf;
+                path_weight *= material.get_weakening(r.direction, hit_info.normal) * material_info.bsdf / material_info.pdf;
 
                 last_delta = is_delta;
             }
@@ -309,7 +291,7 @@ fn main()
     println!("Loading models, building BVHs...\n");
 
     let lights_model: Model = Model::new("models/cornell/cb_light.obj", &light);
-    let lights: PrimitiveList = PrimitiveList::new(vec![lights_model]);
+    let lights: TLAS = TLAS::new(vec![lights_model]);
 
     let world_models: Vec<Model> = vec![
         Model::new("models/cornell/cb_light.obj", &light),
@@ -324,7 +306,7 @@ fn main()
         //Model::new("models/sphere.obj", &ggx_blue_2),
     ];
 
-    let world: PrimitiveList = PrimitiveList::new(world_models);
+    let world: TLAS = TLAS::new(world_models);
 
     //Camera
     println!("\nInitialising camera...");

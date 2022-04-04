@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 
 use rayon::prelude::ParallelSliceMut;
 
-use crate::primitivelist::bvh::boundingbox::{surrounding_box, AABB};
+use crate::tlas::blas::bvh::boundingbox::{surrounding_box, AABB};
 
 pub mod boundingbox;
 
@@ -11,7 +11,7 @@ const DESIRED_BINS: usize = 64;
 const TRAVERSAL_COST: f32 = 1.0;
 const INTERSECTION_COST: f32 = 10.0;
 
-pub(super) struct PrimitiveInfo
+pub(crate) struct PrimitiveInfo
 {
     bounding_box: AABB,
     primitive_index: u32,
@@ -35,7 +35,7 @@ fn create_bounding_box(object_info: &[PrimitiveInfo]) -> AABB
         .fold(AABB::identity(), |a: AABB, b: &PrimitiveInfo| surrounding_box(&a, &b.bounding_box))
 }
 
-pub(super) enum NodeType
+pub(crate) enum BLASNodeType
 {
     Leaf
     {
@@ -43,20 +43,20 @@ pub(super) enum NodeType
     },
     Branch
     {
-        left: Box<BVHNode>, right: Box<BVHNode>
+        left: Box<BLASNode>, right: Box<BLASNode>
     },
 }
 
-pub(super) struct BVHNode
+pub(crate) struct BLASNode
 {
     pub(crate) bounding_box: AABB,
-    pub(crate) node_type: NodeType,
+    pub(crate) node_type: BLASNodeType,
 }
 
-impl BVHNode
+impl BLASNode
 {
     #[must_use]
-    pub(super) fn generate_bvh(object_info: &mut [PrimitiveInfo], last_split_axis: u8) -> Self
+    pub(crate) fn generate_bvh(object_info: &mut [PrimitiveInfo], last_split_axis: u8) -> Self
     {
         let object_span: usize = object_info.len();
         debug_assert!(object_span > 0);
@@ -65,7 +65,7 @@ impl BVHNode
         {
             Self {
                 bounding_box: object_info[0].bounding_box,
-                node_type: NodeType::Leaf {
+                node_type: BLASNodeType::Leaf {
                     primitive_indices: vec![object_info[0].primitive_index],
                 },
             }
@@ -126,23 +126,23 @@ impl BVHNode
             {
                 Self {
                     bounding_box,
-                    node_type: NodeType::Leaf {
+                    node_type: BLASNodeType::Leaf {
                         primitive_indices: object_info.iter().map(|a| a.primitive_index).collect(),
                     },
                 }
             }
             else
             {
-                let (left_indices, right_indices): (&mut [PrimitiveInfo], &mut [PrimitiveInfo]) = object_info.split_at_mut(best_split);
+                let (left_info, right_info): (&mut [PrimitiveInfo], &mut [PrimitiveInfo]) = object_info.split_at_mut(best_split);
 
-                let (left, right): (Box<BVHNode>, Box<BVHNode>) = rayon::join(
-                    || Box::new(Self::generate_bvh(left_indices, split_axis)),
-                    || Box::new(Self::generate_bvh(right_indices, split_axis)),
+                let (left, right): (Box<BLASNode>, Box<BLASNode>) = rayon::join(
+                    || Box::new(Self::generate_bvh(left_info, split_axis)),
+                    || Box::new(Self::generate_bvh(right_info, split_axis)),
                 );
 
                 Self {
                     bounding_box,
-                    node_type: NodeType::Branch { left, right },
+                    node_type: BLASNodeType::Branch { left, right },
                 }
             }
         }

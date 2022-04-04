@@ -1,15 +1,14 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::iter::zip;
 
 use rayon::prelude::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
 use crate::primitive::model::{Model, Vertex, VertexRef};
 use crate::primitive::Triangle;
-use crate::primitivelist::bvh::{BVHNode, NodeType, PrimitiveInfo};
-use crate::{HitInfo, Ray};
+use crate::tlas::blas::bvh::{BLASNode, BLASNodeType, PrimitiveInfo};
+use crate::{HitInfo, Material, Ray};
 
-pub(crate) mod bvh;
+pub mod bvh;
 
 pub fn load_obj(path: &std::path::Path) -> Vec<Vertex>
 {
@@ -102,47 +101,43 @@ pub fn load_obj(path: &std::path::Path) -> Vec<Vertex>
     vertices
 }
 
-pub struct PrimitiveList<'a>
+pub(super) struct BLAS<'a>
 {
-    pub objects: Vec<Triangle<'a>>,
-    bvh: BVHNode,
+    pub objects: Vec<Triangle>,
+    pub material: &'a (dyn Material + Sync + Send),
+    pub bvh: BLASNode,
 }
 
-impl<'a> PrimitiveList<'a>
+impl<'a> BLAS<'a>
 {
-    pub fn new(models: Vec<Model<'a>>) -> Self
+    pub fn new(model: &Model<'a>) -> Self
     {
-        let model_timer = std::time::Instant::now();
+        let vertices: Vec<Vertex> = load_obj(model.file_path);
+        let primitives: Vec<Triangle> = vertices.array_chunks::<3>().map(Triangle::new).collect();
 
-        let vertices: Vec<Vec<Vertex>> = models.par_iter().map(|model| load_obj(model.file_path)).collect();
-
-        let objects: Vec<Triangle<'a>> = zip(models.iter(), vertices.iter())
-            .flat_map(|(model, model_vertices)| model_vertices.array_chunks::<3>().map(|v| Triangle::new(v, model.material)))
-            .collect();
-
-        println!("Finished loading models, took {} \tms", model_timer.elapsed().as_millis());
-
-        let mut object_info: Vec<PrimitiveInfo> = objects
+        let mut primitive_info: Vec<PrimitiveInfo> = primitives
             .par_iter()
             .enumerate()
             .map(|tuple: (usize, &Triangle)| -> PrimitiveInfo { PrimitiveInfo::new(tuple.1.create_bounding_box(), tuple.0 as u32) })
             .collect();
 
-        let bvh_timer = std::time::Instant::now();
-        let bvh: BVHNode = BVHNode::generate_bvh(object_info.as_mut_slice(), 4);
-        println!("Finished building a BVH, took {} \tms", bvh_timer.elapsed().as_millis());
+        let bvh: BLASNode = BLASNode::generate_bvh(primitive_info.as_mut_slice(), 4);
 
-        Self { objects, bvh }
+        Self {
+            objects: primitives,
+            material: model.material,
+            bvh,
+        }
     }
 
-    pub fn intersect(&self, r: &Ray, mut t_max: f32) -> Option<(HitInfo, &Triangle)>
+    pub fn intersect(&self, r: &Ray, mut t_max: f32) -> Option<(HitInfo, &Triangle, &(dyn Material + Sync + Send))>
     {
         if !self.bvh.bounding_box.intersect(r, t_max)
         {
             return None;
         }
 
-        let mut stack: Vec<(&BVHNode, f32)> = vec![(&self.bvh, 0.0)];
+        let mut stack: Vec<(&BLASNode, f32)> = vec![(&self.bvh, 0.0)];
         let mut closest: Option<(HitInfo, &Triangle)> = None;
 
         while let Some((current, t_enter)) = stack.pop()
@@ -154,7 +149,7 @@ impl<'a> PrimitiveList<'a>
 
             match &current.node_type
             {
-                NodeType::Branch { left, right } =>
+                BLASNodeType::Branch { left, right } =>
                 {
                     let intersect_left = left.bounding_box.intersect_t(r, t_max);
                     let intersect_right = right.bounding_box.intersect_t(r, t_max);
@@ -181,7 +176,7 @@ impl<'a> PrimitiveList<'a>
                         stack.push((right, t_enter_right));
                     }
                 }
-                NodeType::Leaf { primitive_indices } if primitive_indices.len() == 1 =>
+                BLASNodeType::Leaf { primitive_indices } if primitive_indices.len() == 1 =>
                 //Fast path for single child
                 {
                     let primitive: &Triangle = &self.objects[primitive_indices[0] as usize];
@@ -191,7 +186,7 @@ impl<'a> PrimitiveList<'a>
                         closest = Some((intersection, primitive));
                     }
                 }
-                NodeType::Leaf { primitive_indices } =>
+                BLASNodeType::Leaf { primitive_indices } =>
                 {
                     if let Some(intersection) = primitive_indices
                         .iter()
@@ -205,11 +200,11 @@ impl<'a> PrimitiveList<'a>
             }
         }
 
-        closest
+        closest.map(|(intersection, primitive)| (intersection, primitive, self.material))
     }
     pub fn any_intersect(&self, r: &Ray, t_max: f32) -> bool
     {
-        let mut stack: Vec<&BVHNode> = vec![&self.bvh];
+        let mut stack: Vec<&BLASNode> = vec![&self.bvh];
 
         while let Some(current) = stack.pop()
         {
@@ -220,12 +215,12 @@ impl<'a> PrimitiveList<'a>
 
             match &current.node_type
             {
-                NodeType::Branch { left, right } =>
+                BLASNodeType::Branch { left, right } =>
                 {
                     stack.push(left);
                     stack.push(right);
                 }
-                NodeType::Leaf { primitive_indices } if primitive_indices.len() == 1 =>
+                BLASNodeType::Leaf { primitive_indices } if primitive_indices.len() == 1 =>
                 //Fast path for single child
                 {
                     if self.objects[primitive_indices[0] as usize].intersect_bool(r, t_max)
@@ -233,7 +228,7 @@ impl<'a> PrimitiveList<'a>
                         return true;
                     }
                 }
-                NodeType::Leaf { primitive_indices } =>
+                BLASNodeType::Leaf { primitive_indices } =>
                 {
                     if primitive_indices.iter().any(|i| self.objects[*i as usize].intersect_bool(r, t_max))
                     {

@@ -1,23 +1,20 @@
 use crate::primitive::model::{HitInfo, Vertex};
-use crate::primitivelist::bvh::boundingbox::AABB;
 use crate::ray::Ray;
+use crate::tlas::blas::bvh::boundingbox::AABB;
 use crate::utility::EPSILON;
-use crate::Material;
 
 pub mod model;
 
-pub struct Triangle<'a>
+pub struct Triangle
 {
     vertices: [Vertex; 3],
     a: glam::Vec3A,
     b: glam::Vec3A,
-
-    pub material: &'a (dyn Material + Sync + Send),
 }
 
-impl<'a> Triangle<'a>
+impl Triangle
 {
-    pub fn new(v: &[Vertex; 3], material: &'a (dyn Material + Sync + Send)) -> Self
+    pub fn new(v: &[Vertex; 3]) -> Self
     {
         let a: glam::Vec3A = v[1].position - v[0].position;
         let b: glam::Vec3A = v[2].position - v[0].position;
@@ -25,7 +22,6 @@ impl<'a> Triangle<'a>
             vertices: [v[0], v[1], v[2]],
             a,
             b,
-            material,
         }
     }
 
