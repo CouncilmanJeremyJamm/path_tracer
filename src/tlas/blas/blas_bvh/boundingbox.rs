@@ -1,6 +1,6 @@
-use crate::INFINITY;
 use crate::ray::Ray;
 use crate::utility::EPSILON;
+use crate::INFINITY;
 
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Copy, Clone)]

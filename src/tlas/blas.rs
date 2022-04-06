@@ -5,10 +5,10 @@ use rayon::prelude::{IndexedParallelIterator, IntoParallelRefIterator, ParallelI
 
 use crate::primitive::model::{Model, Vertex, VertexRef};
 use crate::primitive::Triangle;
-use crate::tlas::blas::bvh::{BLASNode, BLASNodeType, PrimitiveInfo};
+use crate::tlas::blas::blas_bvh::{BLASNode, BLASNodeType, PrimitiveInfo};
 use crate::{HitInfo, Material, Ray};
 
-pub mod bvh;
+pub mod blas_bvh;
 
 pub fn load_obj(path: &std::path::Path) -> Vec<Vertex>
 {
@@ -121,7 +121,7 @@ impl<'a> BLAS<'a>
             .map(|tuple: (usize, &Triangle)| -> PrimitiveInfo { PrimitiveInfo::new(tuple.1.create_bounding_box(), tuple.0 as u32) })
             .collect();
 
-        let bvh: BLASNode = BLASNode::generate_bvh(primitive_info.as_mut_slice(), 4);
+        let bvh: BLASNode = BLASNode::generate_blas(primitive_info.as_mut_slice(), 4);
 
         Self {
             objects: primitives,
@@ -132,11 +132,6 @@ impl<'a> BLAS<'a>
 
     pub fn intersect(&self, r: &Ray, mut t_max: f32) -> Option<(HitInfo, &Triangle, &(dyn Material))>
     {
-        if !self.bvh.bounding_box.intersect(r, t_max)
-        {
-            return None;
-        }
-
         let mut stack: Vec<(&BLASNode, f32)> = vec![(&self.bvh, 0.0)];
         let mut closest: Option<(HitInfo, &Triangle)> = None;
 

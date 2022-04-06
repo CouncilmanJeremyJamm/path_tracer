@@ -97,7 +97,7 @@ fn estimate_direct(rng: &mut TlsWyRand, r: &Ray, hit_info: &HitInfo, mat: &(dyn 
 
     let (num_lights, light_material, light) = lights.random_primitive(rng);
 
-    let u: f32 = rng.generate::<f32>();
+    let u: f32 = 1.0 - rng.generate::<f32>().sqrt();
     let v: f32 = rng.generate::<f32>() * (1.0 - u);
     let point: glam::Vec3A = light.local_to_world(u, v);
 

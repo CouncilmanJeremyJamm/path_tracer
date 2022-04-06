@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 
 use rayon::prelude::ParallelSliceMut;
 
-use crate::tlas::blas::bvh::boundingbox::{surrounding_box, AABB};
+use crate::tlas::blas::blas_bvh::boundingbox::{surrounding_box, AABB};
 
 pub mod boundingbox;
 
@@ -26,13 +26,13 @@ impl PrimitiveInfo
             primitive_index,
         }
     }
-}
 
-fn create_bounding_box(object_info: &[PrimitiveInfo]) -> AABB
-{
-    object_info
-        .iter()
-        .fold(AABB::identity(), |a: AABB, b: &PrimitiveInfo| surrounding_box(&a, &b.bounding_box))
+    pub fn create_bounding_box(object_info: &[Self]) -> AABB
+    {
+        object_info
+            .iter()
+            .fold(AABB::identity(), |a: AABB, b: &PrimitiveInfo| surrounding_box(&a, &b.bounding_box))
+    }
 }
 
 pub(crate) enum BLASNodeType
@@ -55,8 +55,7 @@ pub(crate) struct BLASNode
 
 impl BLASNode
 {
-    #[must_use]
-    pub(crate) fn generate_bvh(object_info: &mut [PrimitiveInfo], last_split_axis: u8) -> Self
+    pub(super) fn generate_blas(object_info: &mut [PrimitiveInfo], last_split_axis: u8) -> Self
     {
         let object_span: usize = object_info.len();
         debug_assert!(object_span > 0);
@@ -72,7 +71,7 @@ impl BLASNode
         }
         else
         {
-            let bounding_box: AABB = create_bounding_box(object_info);
+            let bounding_box: AABB = PrimitiveInfo::create_bounding_box(object_info);
             let bb_sa: f32 = bounding_box.surface_area();
 
             //Find longest axis
@@ -109,8 +108,8 @@ impl BLASNode
                 .map(|i: usize| {
                     let j: usize = (i + 1) * bin_size;
 
-                    let l_box: AABB = create_bounding_box(&object_info[..j]);
-                    let r_box: AABB = create_bounding_box(&object_info[j..]);
+                    let l_box: AABB = PrimitiveInfo::create_bounding_box(&object_info[..j]);
+                    let r_box: AABB = PrimitiveInfo::create_bounding_box(&object_info[j..]);
 
                     let sah: f32 = TRAVERSAL_COST
                         + ((j as f32) * l_box.surface_area() + ((object_span - j) as f32) * r_box.surface_area()) * INTERSECTION_COST / bb_sa;
@@ -136,8 +135,8 @@ impl BLASNode
                 let (left_info, right_info): (&mut [PrimitiveInfo], &mut [PrimitiveInfo]) = object_info.split_at_mut(best_split);
 
                 let (left, right): (Box<BLASNode>, Box<BLASNode>) = rayon::join(
-                    || Box::new(Self::generate_bvh(left_info, split_axis)),
-                    || Box::new(Self::generate_bvh(right_info, split_axis)),
+                    || Box::new(Self::generate_blas(left_info, split_axis)),
+                    || Box::new(Self::generate_blas(right_info, split_axis)),
                 );
 
                 Self {

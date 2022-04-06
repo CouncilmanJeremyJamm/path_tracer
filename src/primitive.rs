@@ -1,6 +1,6 @@
 use crate::primitive::model::{HitInfo, Vertex};
 use crate::ray::Ray;
-use crate::tlas::blas::bvh::boundingbox::AABB;
+use crate::tlas::blas::blas_bvh::boundingbox::AABB;
 use crate::utility::EPSILON;
 
 pub mod model;
