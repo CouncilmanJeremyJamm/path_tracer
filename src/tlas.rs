@@ -103,7 +103,7 @@ impl<'a> TLAS<'a>
                 TLASNodeType::Leaf { blas_index } =>
                 {
                     let blas: &BLAS = &self.blas_vec[*blas_index as usize];
-                    if let Some((hit_info, triangle, material)) = blas.intersect(&bump, r, t_max)
+                    if let Some((hit_info, triangle, material)) = blas.intersect(bump, r, t_max)
                     {
                         t_max = hit_info.t;
                         closest = Some((hit_info, triangle, material));
@@ -135,7 +135,7 @@ impl<'a> TLAS<'a>
                 }
                 TLASNodeType::Leaf { blas_index } =>
                 {
-                    if self.blas_vec[*blas_index as usize].any_intersect(&bump, r, t_max)
+                    if self.blas_vec[*blas_index as usize].any_intersect(bump, r, t_max)
                     {
                         return true;
                     }

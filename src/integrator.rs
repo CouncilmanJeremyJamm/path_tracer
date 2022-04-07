@@ -28,7 +28,7 @@ fn estimate_direct(rng: &mut TlsWyRand, bump: &Bump, r: &Ray, hit_info: &HitInfo
 
     let light_ray: Ray = Ray::new(o, d);
 
-    if !world.any_intersect(&bump, &light_ray, 1.0 - EPSILON)
+    if !world.any_intersect(bump, &light_ray, 1.0 - EPSILON)
     {
         let cosine: f32 = glam::Vec3A::dot(d.normalize(), light.get_normal(u, v)).abs();
         let light_pdf: f32 = d.length_squared() / (cosine * light.area() * (num_lights as f32));
@@ -49,9 +49,9 @@ fn estimate_direct(rng: &mut TlsWyRand, bump: &Bump, r: &Ray, hit_info: &HitInfo
 
     if !material_ray.direction.is_nan()
     {
-        if let Some((material_hi, intersected, material)) = lights.intersect(&bump, &material_ray, INFINITY)
+        if let Some((material_hi, intersected, material)) = lights.intersect(bump, &material_ray, INFINITY)
         {
-            if !world.any_intersect(&bump, &material_ray, material_hi.t * (1.0 - EPSILON))
+            if !world.any_intersect(bump, &material_ray, material_hi.t * (1.0 - EPSILON))
             {
                 let cosine: f32 = glam::Vec3A::dot(material_ray.direction, material_hi.normal).abs();
                 let light_pdf: f32 = material_hi.t * material_hi.t / (cosine * intersected.area() * (num_lights as f32));
