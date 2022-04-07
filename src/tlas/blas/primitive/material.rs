@@ -2,10 +2,12 @@ use glam::Vec3A;
 use nanorand::tls::TlsWyRand;
 use nanorand::Rng;
 
-use crate::onb::{generate_onb, generate_onb_ggx};
-use crate::primitive::model::HitInfo;
 use crate::ray::Ray;
+use crate::tlas::blas::primitive::material::onb::{generate_onb, generate_onb_ggx};
+use crate::tlas::blas::primitive::model::HitInfo;
 use crate::utility::{random_cosine_vector, reflect, refract};
+
+mod onb;
 
 pub struct BsdfPdf
 {

@@ -1,14 +1,14 @@
 #![allow(clippy::upper_case_acronyms)]
-#![feature(array_chunks, total_cmp, bool_to_option)]
-#![feature(allocator_api)]
+#![feature(allocator_api, array_chunks, total_cmp, bool_to_option)]
 extern crate core;
 
 use rayon::prelude::*;
 
+use tlas::blas::primitive::material::*;
+use tlas::blas::primitive::model::{HitInfo, Model};
+use tlas::blas::primitive::Triangle;
+
 use crate::camera::Camera;
-use crate::material::*;
-use crate::primitive::model::{HitInfo, Model};
-use crate::primitive::Triangle;
 use crate::ray::Ray;
 use crate::tlas::TLAS;
 use crate::utility::{EPSILON, INFINITY};
@@ -18,9 +18,6 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 mod camera;
 mod integrator;
-mod material;
-mod onb;
-mod primitive;
 mod ray;
 mod tlas;
 mod utility;
@@ -67,21 +64,6 @@ fn generate_halton(base_x: u32, base_y: u32, num_samples: u32) -> Vec<glam::Vec2
         .collect()
 }
 
-fn u8_to_float(a: u8) -> f32 { ((a as f32) / 255.0).powf(2.2) }
-
-fn f32_to_u8(a: f32) -> u8 { (a.powf(1.0 / 2.2) * 255.0) as u8 }
-
-fn map_colour(a: &glam::Vec3A) -> [u8; 3]
-{
-    [
-        f32_to_u8(a.x.clamp(0.0, 1.0)),
-        f32_to_u8(a.y.clamp(0.0, 1.0)),
-        f32_to_u8(a.z.clamp(0.0, 1.0)),
-    ]
-}
-
-fn pixel_to_vec3(p: image::Rgba<u8>) -> glam::Vec3A { glam::Vec3A::new(u8_to_float(p[0]), u8_to_float(p[1]), u8_to_float(p[2])) }
-
 fn main()
 {
     println!("Loading images...");
@@ -122,7 +104,7 @@ fn main()
     let world: TLAS = TLAS::new(world_models);
 
     //Camera
-    println!("\nInitialising camera...");
+    println!("Initialising camera...");
     let look_from: glam::Vec3A = glam::Vec3A::new(0.0, 50.0, 1000.0);
     let look_at: glam::Vec3A = glam::Vec3A::new(0.0, 50.0, 0.0);
     let up_vector: glam::Vec3A = glam::Vec3A::Y;
@@ -160,7 +142,7 @@ fn main()
     println!("Finished path-tracing, took {} seconds", render_begin.elapsed().as_secs());
 
     println!("Converting data...");
-    let data: Vec<u8> = image_data.par_iter().flat_map_iter(map_colour).collect();
+    let data: Vec<u8> = image_data.par_iter().flat_map_iter(integrator::map_colour).collect();
 
     println!("Saving output...");
     image::save_buffer(

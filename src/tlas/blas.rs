@@ -1,15 +1,18 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader};
+use std::time::Instant;
 
 use bumpalo::Bump;
 use rayon::prelude::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
-use crate::primitive::model::{Model, Vertex, VertexRef};
-use crate::primitive::Triangle;
+use primitive::model::{Model, Vertex, VertexRef};
+use primitive::Triangle;
+
 use crate::tlas::blas::blas_bvh::{BLASNode, BLASNodeType, PrimitiveInfo};
 use crate::{HitInfo, Material, Ray};
 
 pub mod blas_bvh;
+pub mod primitive;
 
 pub fn load_obj(path: &std::path::Path) -> Vec<Vertex>
 {
@@ -104,7 +107,7 @@ pub fn load_obj(path: &std::path::Path) -> Vec<Vertex>
 
 pub(super) struct BLAS<'a>
 {
-    pub objects: Vec<Triangle>,
+    pub primitives: Vec<Triangle>,
     pub material: &'a (dyn Material),
     pub bvh: BLASNode,
 }
@@ -113,6 +116,8 @@ impl<'a> BLAS<'a>
 {
     pub fn new(model: &Model<'a>) -> Self
     {
+        let timer: Instant = Instant::now();
+
         let vertices: Vec<Vertex> = load_obj(model.file_path);
         let primitives: Vec<Triangle> = vertices.array_chunks::<3>().map(Triangle::new).collect();
 
@@ -124,8 +129,10 @@ impl<'a> BLAS<'a>
 
         let bvh: BLASNode = BLASNode::generate_blas(primitive_info.as_mut_slice(), 4);
 
+        println!("BLAS - {:?}: \t{:?}", model.file_path.file_name().unwrap(), timer.elapsed());
+
         Self {
-            objects: primitives,
+            primitives,
             material: model.material,
             bvh,
         }
@@ -176,7 +183,7 @@ impl<'a> BLAS<'a>
                 BLASNodeType::Leaf { primitive_indices } if primitive_indices.len() == 1 =>
                 //Fast path for single child
                 {
-                    let primitive: &Triangle = &self.objects[primitive_indices[0] as usize];
+                    let primitive: &Triangle = &self.primitives[primitive_indices[0] as usize];
                     if let Some(intersection) = primitive.intersect(r, t_max)
                     {
                         t_max = intersection.t;
@@ -187,11 +194,11 @@ impl<'a> BLAS<'a>
                 {
                     if let Some(intersection) = primitive_indices
                         .iter()
-                        .filter_map(|i| self.objects[*i as usize].intersect(r, t_max).zip(Some(*i)))
+                        .filter_map(|i| self.primitives[*i as usize].intersect(r, t_max).zip(Some(*i)))
                         .min_by(|a, b| a.0.t.total_cmp(&b.0.t))
                     {
                         t_max = intersection.0.t;
-                        closest = Some((intersection.0, &self.objects[intersection.1 as usize]));
+                        closest = Some((intersection.0, &self.primitives[intersection.1 as usize]));
                     }
                 }
             }
@@ -221,14 +228,14 @@ impl<'a> BLAS<'a>
                 BLASNodeType::Leaf { primitive_indices } if primitive_indices.len() == 1 =>
                 //Fast path for single child
                 {
-                    if self.objects[primitive_indices[0] as usize].intersect_bool(r, t_max)
+                    if self.primitives[primitive_indices[0] as usize].intersect_bool(r, t_max)
                     {
                         return true;
                     }
                 }
                 BLASNodeType::Leaf { primitive_indices } =>
                 {
-                    if primitive_indices.iter().any(|i| self.objects[*i as usize].intersect_bool(r, t_max))
+                    if primitive_indices.iter().any(|i| self.primitives[*i as usize].intersect_bool(r, t_max))
                     {
                         return true;
                     }

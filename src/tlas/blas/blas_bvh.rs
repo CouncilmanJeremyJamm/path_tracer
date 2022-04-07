@@ -75,25 +75,10 @@ impl BLASNode
             let bb_sa: f32 = bounding_box.surface_area();
 
             //Find longest axis
-            let box_length: glam::Vec3A = bounding_box.length();
-            let max_length: f32 = box_length.max_element();
-
-            let split_axis: u8 = if box_length.x == max_length
-            {
-                0u8
-            }
-            else if box_length.y == max_length
-            {
-                1u8
-            }
-            else
-            {
-                2u8
-            };
+            let split_axis: u8 = bounding_box.longest_axis();
 
             //Sort, for splitting along longest axis
             //Indices are still correctly sorted if the parent node sorted along the same axis
-            //Don't sort twice unnecessarily
             if split_axis != last_split_axis
             {
                 let comparator = |a: &PrimitiveInfo, b: &PrimitiveInfo| -> Ordering { a.bounding_box.compare(&b.bounding_box, split_axis) };

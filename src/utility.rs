@@ -1,5 +1,5 @@
-use nanorand::tls::TlsWyRand;
 use nanorand::Rng;
+use nanorand::tls::TlsWyRand;
 
 pub const EPSILON: f32 = 5e-04;
 pub const INFINITY: f32 = f32::INFINITY;

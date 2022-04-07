@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use bumpalo::Bump;
 use nanorand::tls::TlsWyRand;
 use nanorand::Rng;
@@ -22,9 +24,11 @@ impl<'a> TLAS<'a>
 {
     pub fn new(models: Vec<Model<'a>>) -> Self
     {
+        let timer: Instant = Instant::now();
+
         let blas_vec: Vec<BLAS<'a>> = models.par_iter().map(BLAS::new).collect();
 
-        let num_primitives: usize = blas_vec.iter().map(|blas| blas.objects.len()).sum();
+        let num_primitives: usize = blas_vec.iter().map(|blas| blas.primitives.len()).sum();
 
         let mut blas_info: Vec<BLASInfo> = blas_vec
             .par_iter()
@@ -33,6 +37,8 @@ impl<'a> TLAS<'a>
             .collect();
 
         let bvh: TLASNode = TLASNode::generate_tlas(blas_info.as_mut_slice());
+
+        println!("TLAS: {:?}\n", timer.elapsed());
 
         Self {
             blas_vec,
@@ -48,7 +54,7 @@ impl<'a> TLAS<'a>
         (
             self.num_primitives,
             blas.material,
-            &blas.objects[rng.generate_range(0..blas.objects.len())],
+            &blas.primitives[rng.generate_range(0..blas.primitives.len())],
         )
     }
 

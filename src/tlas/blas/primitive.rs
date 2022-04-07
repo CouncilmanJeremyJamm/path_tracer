@@ -1,8 +1,10 @@
-use crate::primitive::model::{HitInfo, Vertex};
 use crate::ray::Ray;
 use crate::tlas::blas::blas_bvh::boundingbox::AABB;
+use crate::tlas::blas::Vertex;
 use crate::utility::EPSILON;
+use crate::HitInfo;
 
+pub mod material;
 pub mod model;
 
 pub struct Triangle

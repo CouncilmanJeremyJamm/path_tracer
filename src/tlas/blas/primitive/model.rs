@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::material;
+use crate::tlas::blas::primitive::material;
 
 pub struct HitInfo
 {
@@ -31,7 +31,9 @@ pub struct Model<'c>
 
 impl<'c> Model<'c>
 {
-    pub fn new<P: ?Sized + AsRef<Path>>(file_path: &'c P, material: &'c (dyn material::Material)) -> Self
+    pub fn new<P>(file_path: &'c P, material: &'c (dyn material::Material)) -> Self
+    where
+        P: ?Sized + AsRef<Path>,
     {
         Self {
             file_path: file_path.as_ref(),

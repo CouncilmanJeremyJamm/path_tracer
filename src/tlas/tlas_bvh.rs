@@ -1,5 +1,6 @@
-use crate::tlas::blas::blas_bvh::boundingbox::{surrounding_box, AABB};
 use std::cmp::Ordering;
+
+use crate::tlas::blas::blas_bvh::boundingbox::{surrounding_box, AABB};
 
 pub(super) struct BLASInfo
 {
@@ -57,27 +58,14 @@ impl TLASNode
             let bounding_box: AABB = BLASInfo::create_bounding_box(blas_info);
 
             //Find longest axis
-            let box_length: glam::Vec3A = bounding_box.length();
-            let max_length: f32 = box_length.max_element();
-
-            let split_axis: u8 = if box_length.x == max_length
-            {
-                0u8
-            }
-            else if box_length.y == max_length
-            {
-                1u8
-            }
-            else
-            {
-                2u8
-            };
+            let split_axis: u8 = bounding_box.longest_axis();
 
             let comparator = |a: &BLASInfo, b: &BLASInfo| -> Ordering { a.bounding_box.compare(&b.bounding_box, split_axis) };
             blas_info.sort_unstable_by(comparator);
 
-            let (left_info, right_info) = blas_info.split_at_mut(blas_span / 2);
-            let (left, right) = rayon::join(|| Box::new(Self::generate_tlas(left_info)), || Box::new(Self::generate_tlas(right_info)));
+            let (left_info, right_info): (&mut [BLASInfo], &mut [BLASInfo]) = blas_info.split_at_mut(blas_span / 2);
+            let (left, right): (Box<TLASNode>, Box<TLASNode>) =
+                rayon::join(|| Box::new(Self::generate_tlas(left_info)), || Box::new(Self::generate_tlas(right_info)));
 
             Self {
                 bounding_box,

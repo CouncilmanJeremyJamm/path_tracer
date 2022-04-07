@@ -45,6 +45,25 @@ impl AABB
 
     pub fn length(&self) -> glam::Vec3A { self.maximum - self.minimum }
 
+    pub fn longest_axis(&self) -> u8
+    {
+        let box_length: glam::Vec3A = self.length();
+        let max_length: f32 = box_length.max_element();
+
+        if box_length.x == max_length
+        {
+            0u8
+        }
+        else if box_length.y == max_length
+        {
+            1u8
+        }
+        else
+        {
+            2u8
+        }
+    }
+
     pub fn surface_area(&self) -> f32
     {
         let v: glam::Vec3A = self.maximum - self.minimum;
