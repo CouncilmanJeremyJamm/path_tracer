@@ -1,6 +1,7 @@
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 
+use bumpalo::Bump;
 use rayon::prelude::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
 use crate::primitive::model::{Model, Vertex, VertexRef};
@@ -130,9 +131,10 @@ impl<'a> BLAS<'a>
         }
     }
 
-    pub fn intersect(&self, r: &Ray, mut t_max: f32) -> Option<(HitInfo, &Triangle, &(dyn Material))>
+    pub fn intersect(&self, bump: &Bump, r: &Ray, mut t_max: f32) -> Option<(HitInfo, &Triangle, &(dyn Material))>
     {
-        let mut stack: Vec<(&BLASNode, f32)> = vec![(&self.bvh, 0.0)];
+        let mut stack: Vec<(&BLASNode, f32), _> = Vec::with_capacity_in(1, bump);
+        stack.push((&self.bvh, 0.0));
         let mut closest: Option<(HitInfo, &Triangle)> = None;
 
         while let Some((current, t_enter)) = stack.pop()
@@ -197,9 +199,10 @@ impl<'a> BLAS<'a>
 
         closest.map(|(intersection, primitive)| (intersection, primitive, self.material))
     }
-    pub fn any_intersect(&self, r: &Ray, t_max: f32) -> bool
+    pub fn any_intersect(&self, bump: &Bump, r: &Ray, t_max: f32) -> bool
     {
-        let mut stack: Vec<&BLASNode> = vec![&self.bvh];
+        let mut stack: Vec<&BLASNode, _> = Vec::with_capacity_in(1, bump);
+        stack.push(&self.bvh);
 
         while let Some(current) = stack.pop()
         {

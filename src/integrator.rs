@@ -1,7 +1,9 @@
-use crate::{BsdfPdf, HitInfo, Material, Ray, ENABLE_NEE, EPSILON, INFINITY, TLAS};
+use bumpalo::Bump;
 use image::{DynamicImage, GenericImageView, ImageResult};
 use nanorand::tls::TlsWyRand;
 use nanorand::Rng;
+
+use crate::{BsdfPdf, HitInfo, Material, Ray, ENABLE_NEE, EPSILON, INFINITY, TLAS};
 
 #[allow(dead_code)]
 #[inline]
@@ -10,7 +12,7 @@ fn balance_heuristic(f: f32, g: f32) -> f32 { f / (f + g) }
 #[inline]
 fn power_heuristic(f: f32, g: f32) -> f32 { (f * f) / (f * f + g * g) }
 
-fn estimate_direct(rng: &mut TlsWyRand, r: &Ray, hit_info: &HitInfo, mat: &(dyn Material), world: &TLAS, lights: &TLAS) -> glam::Vec3A
+fn estimate_direct(rng: &mut TlsWyRand, bump: &Bump, r: &Ray, hit_info: &HitInfo, mat: &(dyn Material), world: &TLAS, lights: &TLAS) -> glam::Vec3A
 {
     let mut direct: glam::Vec3A = glam::Vec3A::ZERO;
     let incoming: glam::Vec3A = -r.direction;
@@ -26,7 +28,7 @@ fn estimate_direct(rng: &mut TlsWyRand, r: &Ray, hit_info: &HitInfo, mat: &(dyn 
 
     let light_ray: Ray = Ray::new(o, d);
 
-    if !world.any_intersect(&light_ray, 1.0 - EPSILON)
+    if !world.any_intersect(&bump, &light_ray, 1.0 - EPSILON)
     {
         let cosine: f32 = glam::Vec3A::dot(d.normalize(), light.get_normal(u, v)).abs();
         let light_pdf: f32 = d.length_squared() / (cosine * light.area() * (num_lights as f32));
@@ -47,9 +49,9 @@ fn estimate_direct(rng: &mut TlsWyRand, r: &Ray, hit_info: &HitInfo, mat: &(dyn 
 
     if !material_ray.direction.is_nan()
     {
-        if let Some((material_hi, intersected, material)) = lights.intersect(&material_ray, INFINITY)
+        if let Some((material_hi, intersected, material)) = lights.intersect(&bump, &material_ray, INFINITY)
         {
-            if !world.any_intersect(&material_ray, material_hi.t * (1.0 - EPSILON))
+            if !world.any_intersect(&bump, &material_ray, material_hi.t * (1.0 - EPSILON))
             {
                 let cosine: f32 = glam::Vec3A::dot(material_ray.direction, material_hi.normal).abs();
                 let light_pdf: f32 = material_hi.t * material_hi.t / (cosine * intersected.area() * (num_lights as f32));
@@ -71,6 +73,8 @@ fn estimate_direct(rng: &mut TlsWyRand, r: &Ray, hit_info: &HitInfo, mat: &(dyn 
 
 pub fn integrate(rng: &mut TlsWyRand, mut r: Ray, world: &TLAS, lights: &TLAS, env: &ImageResult<DynamicImage>, max_bounces: u32) -> glam::Vec3A
 {
+    let bump: Bump = Bump::new();
+
     let mut accumulated: glam::Vec3A = glam::Vec3A::ZERO;
     let mut path_weight: glam::Vec3A = glam::Vec3A::ONE;
 
@@ -78,7 +82,7 @@ pub fn integrate(rng: &mut TlsWyRand, mut r: Ray, world: &TLAS, lights: &TLAS, e
 
     for b in 0..=max_bounces
     {
-        if let Some((hit_info, _, material)) = world.intersect(&r, INFINITY)
+        if let Some((hit_info, _, material)) = world.intersect(&bump, &r, INFINITY)
         {
             let wi: glam::Vec3A = -r.direction;
 
@@ -93,7 +97,7 @@ pub fn integrate(rng: &mut TlsWyRand, mut r: Ray, world: &TLAS, lights: &TLAS, e
 
                 if ENABLE_NEE && !is_delta
                 {
-                    accumulated += path_weight * estimate_direct(rng, &r, &hit_info, material, world, lights);
+                    accumulated += path_weight * estimate_direct(rng, &bump, &r, &hit_info, material, world, lights);
                 }
 
                 r = Ray::new(

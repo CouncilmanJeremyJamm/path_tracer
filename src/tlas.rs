@@ -1,3 +1,4 @@
+use bumpalo::Bump;
 use nanorand::tls::TlsWyRand;
 use nanorand::Rng;
 use rayon::prelude::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
@@ -51,14 +52,16 @@ impl<'a> TLAS<'a>
         )
     }
 
-    pub fn intersect(&self, r: &Ray, mut t_max: f32) -> Option<(HitInfo, &Triangle, &(dyn Material))>
+    pub fn intersect(&self, bump: &Bump, r: &Ray, mut t_max: f32) -> Option<(HitInfo, &Triangle, &(dyn Material))>
     {
         if !self.bvh.bounding_box.intersect(r, t_max)
         {
             return None;
         }
 
-        let mut stack: Vec<(&TLASNode, f32)> = vec![(&self.bvh, 0.0)];
+        let mut stack: Vec<(&TLASNode, f32), _> = Vec::with_capacity_in(1, bump);
+        stack.push((&self.bvh, 0.0));
+
         let mut closest: Option<(HitInfo, &Triangle, &(dyn Material))> = None;
 
         while let Some((current, t_enter)) = stack.pop()
@@ -100,7 +103,7 @@ impl<'a> TLAS<'a>
                 TLASNodeType::Leaf { blas_index } =>
                 {
                     let blas: &BLAS = &self.blas_vec[*blas_index as usize];
-                    if let Some((hit_info, triangle, material)) = blas.intersect(r, t_max)
+                    if let Some((hit_info, triangle, material)) = blas.intersect(&bump, r, t_max)
                     {
                         t_max = hit_info.t;
                         closest = Some((hit_info, triangle, material));
@@ -111,9 +114,10 @@ impl<'a> TLAS<'a>
 
         closest
     }
-    pub fn any_intersect(&self, r: &Ray, t_max: f32) -> bool
+    pub fn any_intersect(&self, bump: &Bump, r: &Ray, t_max: f32) -> bool
     {
-        let mut stack: Vec<&TLASNode> = vec![&self.bvh];
+        let mut stack: Vec<&TLASNode, _> = Vec::with_capacity_in(1, bump);
+        stack.push(&self.bvh);
 
         while let Some(current) = stack.pop()
         {
@@ -131,7 +135,7 @@ impl<'a> TLAS<'a>
                 }
                 TLASNodeType::Leaf { blas_index } =>
                 {
-                    if self.blas_vec[*blas_index as usize].any_intersect(r, t_max)
+                    if self.blas_vec[*blas_index as usize].any_intersect(&bump, r, t_max)
                     {
                         return true;
                     }

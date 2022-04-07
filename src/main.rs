@@ -1,5 +1,6 @@
 #![allow(clippy::upper_case_acronyms)]
 #![feature(array_chunks, total_cmp, bool_to_option)]
+#![feature(allocator_api)]
 extern crate core;
 
 use rayon::prelude::*;

@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use crate::material;
 
 pub struct HitInfo
@@ -23,16 +25,16 @@ pub struct VertexRef
 
 pub struct Model<'c>
 {
-    pub file_path: &'c std::path::Path,
+    pub file_path: &'c Path,
     pub material: &'c (dyn material::Material),
 }
 
 impl<'c> Model<'c>
 {
-    pub fn new(file_path: &'c str, material: &'c (dyn material::Material)) -> Self
+    pub fn new<P: ?Sized + AsRef<Path>>(file_path: &'c P, material: &'c (dyn material::Material)) -> Self
     {
         Self {
-            file_path: std::path::Path::new(file_path),
+            file_path: file_path.as_ref(),
             material,
         }
     }
