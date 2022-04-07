@@ -1,3 +1,6 @@
+use nanorand::tls::TlsWyRand;
+use nanorand::Rng;
+
 use crate::ray::Ray;
 use crate::tlas::blas::blas_bvh::boundingbox::AABB;
 use crate::tlas::blas::Vertex;
@@ -9,7 +12,8 @@ pub mod model;
 
 pub struct Triangle
 {
-    vertices: [Vertex; 3],
+    positions: glam::Mat3A,
+    normals: glam::Mat3A,
     a: glam::Vec3A,
     b: glam::Vec3A,
 }
@@ -21,7 +25,8 @@ impl Triangle
         let a: glam::Vec3A = v[1].position - v[0].position;
         let b: glam::Vec3A = v[2].position - v[0].position;
         Self {
-            vertices: [v[0], v[1], v[2]],
+            positions: glam::Mat3A::from_cols(v[0].position, v[1].position, v[2].position),
+            normals: glam::Mat3A::from_cols(v[0].normal, v[1].normal, v[2].normal),
             a,
             b,
         }
@@ -30,7 +35,7 @@ impl Triangle
     pub fn get_normal(&self, u: f32, v: f32) -> glam::Vec3A
     {
         let w: f32 = 1.0 - u - v;
-        (self.vertices[0].normal * w) + (self.vertices[1].normal * u) + (self.vertices[2].normal * v)
+        self.normals * glam::Vec3A::new(w, u, v)
     }
 
     pub fn intersect(&self, ray: &Ray, t_max: f32) -> Option<HitInfo>
@@ -45,7 +50,7 @@ impl Triangle
 
         let inv_determinant: f32 = 1.0 / determinant;
 
-        let t_vec: glam::Vec3A = ray.origin - self.vertices[0].position;
+        let t_vec: glam::Vec3A = ray.origin - self.positions.col(0);
         let u: f32 = glam::Vec3A::dot(t_vec, p_vec) * inv_determinant;
 
         if u < 0.0 || u > 1.0
@@ -93,7 +98,7 @@ impl Triangle
 
         let inv_determinant: f32 = 1.0 / determinant;
 
-        let t_vec: glam::Vec3A = ray.origin - self.vertices[0].position;
+        let t_vec: glam::Vec3A = ray.origin - self.positions.col(0);
         let u: f32 = glam::Vec3A::dot(t_vec, p_vec) * inv_determinant;
 
         if u < 0.0 || u > 1.0
@@ -121,23 +126,34 @@ impl Triangle
 
     pub fn create_bounding_box(&self) -> AABB
     {
-        let mut minimum: glam::Vec3A = self.vertices[0].position;
-        let mut maximum: glam::Vec3A = self.vertices[0].position;
-
-        for v in &self.vertices[1..]
-        {
-            minimum = glam::Vec3A::min(minimum, v.position);
-            maximum = glam::Vec3A::max(maximum, v.position);
-        }
+        let minimum: glam::Vec3A = self.positions.col(0).min(self.positions.col(1)).min(self.positions.col(2));
+        let maximum: glam::Vec3A = self.positions.col(0).max(self.positions.col(1)).max(self.positions.col(2));
 
         AABB::new(minimum, maximum)
     }
 
-    pub fn local_to_world(&self, u: f32, v: f32) -> glam::Vec3A
+    pub fn get_position(&self, u: f32, v: f32) -> glam::Vec3A
     {
-        (self.vertices[0].position * (1.0 - u.sqrt()))
-            + (self.vertices[1].position * u.sqrt() * (1.0 - v))
-            + (self.vertices[2].position * u.sqrt() * v)
+        let w: f32 = 1.0 - u - v;
+        self.positions * glam::Vec3A::new(w, u, v)
+    }
+
+    //Obtains a random point on the primitive, distributed uniformly on the surface
+    //Return the point, and the normal at that point
+    pub fn random_point(&self, rng: &mut TlsWyRand) -> (glam::Vec3A, glam::Vec3A)
+    {
+        //Flipping sampling method from NVIDIA's RTG-1, pg. 236
+        //Cannot use low-discrepancy sequences, no guarantee on distribution after folding
+        let mut u: f32 = rng.generate();
+        let mut v: f32 = rng.generate();
+
+        if u + v > 1.0
+        {
+            u = 1.0 - u;
+            v = 1.0 - v;
+        }
+
+        (self.get_position(u, v), self.get_normal(u, v))
     }
 
     pub fn area(&self) -> f32 { 0.5 * glam::Vec3A::length(glam::Vec3A::cross(self.a, self.b)) }

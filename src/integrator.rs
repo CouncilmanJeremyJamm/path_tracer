@@ -1,9 +1,9 @@
 use bumpalo::Bump;
 use image::{DynamicImage, GenericImageView, ImageResult};
-use nanorand::Rng;
 use nanorand::tls::TlsWyRand;
+use nanorand::Rng;
 
-use crate::{BsdfPdf, ENABLE_NEE, EPSILON, HitInfo, INFINITY, Material, Ray, TLAS};
+use crate::{BsdfPdf, HitInfo, Material, Ray, ENABLE_NEE, EPSILON, INFINITY, TLAS};
 
 #[allow(dead_code)]
 #[inline]
@@ -19,9 +19,7 @@ fn estimate_direct(rng: &mut TlsWyRand, bump: &Bump, r: &Ray, hit_info: &HitInfo
 
     let (num_lights, light_material, light) = lights.random_primitive(rng);
 
-    let u: f32 = 1.0 - rng.generate::<f32>().sqrt();
-    let v: f32 = rng.generate::<f32>() * (1.0 - u);
-    let point: glam::Vec3A = light.local_to_world(u, v);
+    let (point, light_normal): (glam::Vec3A, glam::Vec3A) = light.random_point(rng);
 
     let o: glam::Vec3A = r.at(hit_info.t);
     let d: glam::Vec3A = point - o;
@@ -30,7 +28,7 @@ fn estimate_direct(rng: &mut TlsWyRand, bump: &Bump, r: &Ray, hit_info: &HitInfo
 
     if !world.any_intersect(bump, &light_ray, 1.0 - EPSILON)
     {
-        let cosine: f32 = glam::Vec3A::dot(d.normalize(), light.get_normal(u, v)).abs();
+        let cosine: f32 = glam::Vec3A::dot(d.normalize(), light_normal).abs();
         let light_pdf: f32 = d.length_squared() / (cosine * light.area() * (num_lights as f32));
 
         let light_info: BsdfPdf = mat.get_brdf_pdf(incoming, light_ray.direction, hit_info);

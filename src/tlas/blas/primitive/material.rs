@@ -95,6 +95,25 @@ impl Material for Emissive
     fn is_emissive(&self) -> bool { true }
 }
 
+pub struct Specular
+{
+    colour: glam::Vec3A,
+}
+
+impl Specular
+{
+    pub fn new(colour: glam::Vec3A) -> Self { Self { colour } }
+}
+
+impl Material for Specular
+{
+    fn scatter_direction(&self, _: &mut TlsWyRand, incoming: Vec3A, normal: Vec3A, _: bool) -> Vec3A { reflect(incoming.normalize(), normal) }
+
+    fn get_brdf_pdf(&self, _: Vec3A, _: Vec3A, _: &HitInfo) -> BsdfPdf { BsdfPdf::new(self.colour, 1.0) }
+
+    fn is_delta(&self) -> bool { true }
+}
+
 struct GGX {}
 impl GGX
 {

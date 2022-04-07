@@ -1,5 +1,5 @@
 #![allow(clippy::upper_case_acronyms)]
-#![feature(allocator_api, array_chunks, total_cmp, bool_to_option)]
+#![feature(allocator_api, array_chunks, bool_to_option)]
 extern crate core;
 
 use rayon::prelude::*;
@@ -68,6 +68,10 @@ fn main()
 {
     println!("Loading images...");
     let env = image::io::Reader::open("images/env/HDR_110_Tunnel_Bg.jpg").unwrap().decode();
+    if env.is_err()
+    {
+        println!("{:?}", env);
+    }
 
     //Materials
     println!("Creating materials...");
@@ -79,6 +83,7 @@ fn main()
     let ggx_blue = GGXMetal::new(glam::Vec3A::new(0.1, 0.1, 0.45), 0.4);
     let ggx_blue_2 = GGXDielectric::new(glam::Vec3A::new(0.05, 0.05, 0.05), glam::Vec3A::new(0.95, 0.95, 0.95), 1.5, 0.5);
     let glass = Dielectric::new(glam::Vec3A::new(0.7, 0.7, 0.7), 1.5);
+    let mirror = Specular::new(glam::Vec3A::ONE);
 
     let light = Emissive::new(glam::Vec3A::new(10.0, 10.0, 10.0));
 
@@ -98,7 +103,7 @@ fn main()
         //Model::new("models/sphere_offset.obj", &glass),
         Model::new("models/zenobia.obj", &diffuse_gray),
         Model::new("models/cornell/dragon.obj", &ggx_blue),
-        //Model::new("models/sphere.obj", &ggx_blue_2),
+        //Model::new("models/sphere.obj", &mirror),
     ];
 
     let world: TLAS = TLAS::new(world_models);
