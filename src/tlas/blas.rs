@@ -9,7 +9,7 @@ use primitive::model::{Model, Vertex, VertexRef};
 use primitive::Triangle;
 
 use crate::tlas::blas::blas_bvh::{BLASNode, BLASNodeType, PrimitiveInfo};
-use crate::{HitInfo, Material, Ray};
+use crate::{HitInfo, Material, MaterialTrait, Ray};
 
 pub mod blas_bvh;
 pub mod primitive;
@@ -108,7 +108,7 @@ pub fn load_obj(path: &std::path::Path) -> Vec<Vertex>
 pub(super) struct BLAS<'a>
 {
     pub primitives: Vec<Triangle>,
-    pub material: &'a (dyn Material),
+    pub material: &'a Material,
     pub bvh: BLASNode,
 }
 
@@ -138,7 +138,7 @@ impl<'a> BLAS<'a>
         }
     }
 
-    pub fn intersect(&self, bump: &Bump, r: &Ray, mut t_max: f32) -> Option<(HitInfo, &Triangle, &(dyn Material))>
+    pub fn intersect(&self, bump: &Bump, r: &Ray, mut t_max: f32) -> Option<(HitInfo, &Triangle, &Material)>
     {
         let mut stack: Vec<(&BLASNode, f32), _> = Vec::with_capacity_in(1, bump);
         stack.push((&self.bvh, 0.0));

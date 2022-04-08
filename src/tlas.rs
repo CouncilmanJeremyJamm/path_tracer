@@ -8,7 +8,7 @@ use rayon::prelude::{IndexedParallelIterator, IntoParallelRefIterator, ParallelI
 use tlas_bvh::{BLASInfo, TLASNode, TLASNodeType};
 
 use crate::tlas::blas::BLAS;
-use crate::{HitInfo, Material, Model, Ray, Triangle};
+use crate::{HitInfo, Material, MaterialTrait, Model, Ray, Triangle};
 
 pub mod blas;
 mod tlas_bvh;
@@ -47,7 +47,7 @@ impl<'a> TLAS<'a>
         }
     }
 
-    pub fn random_primitive(&self, rng: &mut TlsWyRand) -> (usize, &(dyn Material), &Triangle)
+    pub fn random_primitive(&self, rng: &mut TlsWyRand) -> (usize, &Material, &Triangle)
     {
         let blas: &BLAS = &self.blas_vec[rng.generate_range(0..self.blas_vec.len())];
 
@@ -58,7 +58,7 @@ impl<'a> TLAS<'a>
         )
     }
 
-    pub fn intersect(&self, bump: &Bump, r: &Ray, mut t_max: f32) -> Option<(HitInfo, &Triangle, &(dyn Material))>
+    pub fn intersect(&self, bump: &Bump, r: &Ray, mut t_max: f32) -> Option<(HitInfo, &Triangle, &Material)>
     {
         if !self.bvh.bounding_box.intersect(r, t_max)
         {
@@ -68,7 +68,7 @@ impl<'a> TLAS<'a>
         let mut stack: Vec<(&TLASNode, f32), _> = Vec::with_capacity_in(1, bump);
         stack.push((&self.bvh, 0.0));
 
-        let mut closest: Option<(HitInfo, &Triangle, &(dyn Material))> = None;
+        let mut closest: Option<(HitInfo, &Triangle, &Material)> = None;
 
         while let Some((current, t_enter)) = stack.pop()
         {

@@ -1,3 +1,4 @@
+use enum_dispatch::enum_dispatch;
 use glam::Vec3A;
 use nanorand::tls::TlsWyRand;
 use nanorand::Rng;
@@ -24,7 +25,8 @@ impl BsdfPdf
     }
 }
 
-pub trait Material: Sync + Send
+#[enum_dispatch]
+pub trait MaterialTrait: Sync + Send
 {
     fn scatter_direction(&self, rng: &mut TlsWyRand, incoming: glam::Vec3A, normal: glam::Vec3A, front_facing: bool) -> glam::Vec3A;
     fn get_brdf_pdf(&self, incoming: glam::Vec3A, outgoing: glam::Vec3A, hi: &HitInfo) -> BsdfPdf;
@@ -48,6 +50,17 @@ pub trait Material: Sync + Send
     }
 }
 
+#[enum_dispatch(MaterialTrait)]
+pub enum Material
+{
+    Lambertian,
+    Emissive,
+    Specular,
+    GGXMetal,
+    GGXDielectric,
+    Dielectric,
+}
+
 pub struct Lambertian
 {
     albedo: glam::Vec3A,
@@ -55,10 +68,10 @@ pub struct Lambertian
 
 impl Lambertian
 {
-    pub fn new(albedo: glam::Vec3A) -> Self { Self { albedo } }
+    pub fn new(albedo: glam::Vec3A) -> Material { Self { albedo }.into() }
 }
 
-impl Material for Lambertian
+impl MaterialTrait for Lambertian
 {
     fn scatter_direction(&self, rng: &mut TlsWyRand, _: glam::Vec3A, normal: glam::Vec3A, _: bool) -> glam::Vec3A
     {
@@ -81,10 +94,10 @@ pub struct Emissive
 
 impl Emissive
 {
-    pub fn new(emitted: glam::Vec3A) -> Self { Self { emitted } }
+    pub fn new(emitted: glam::Vec3A) -> Material { Self { emitted }.into() }
 }
 
-impl Material for Emissive
+impl MaterialTrait for Emissive
 {
     fn scatter_direction(&self, _: &mut TlsWyRand, _: glam::Vec3A, _: glam::Vec3A, _: bool) -> glam::Vec3A { glam::Vec3A::ZERO }
 
@@ -102,10 +115,10 @@ pub struct Specular
 
 impl Specular
 {
-    pub fn new(colour: glam::Vec3A) -> Self { Self { colour } }
+    pub fn new(colour: glam::Vec3A) -> Material { Self { colour }.into() }
 }
 
-impl Material for Specular
+impl MaterialTrait for Specular
 {
     fn scatter_direction(&self, _: &mut TlsWyRand, incoming: Vec3A, normal: Vec3A, _: bool) -> Vec3A { reflect(incoming.normalize(), normal) }
 
@@ -190,16 +203,17 @@ impl GGXMetal
 
         x / (z + w)
     }
-    pub fn new(colour: glam::Vec3A, roughness: f32) -> Self
+    pub fn new(colour: glam::Vec3A, roughness: f32) -> Material
     {
         Self {
             colour,
             a: roughness.powi(2).clamp(0.0001, 1.0),
         }
+        .into()
     }
 }
 
-impl Material for GGXMetal
+impl MaterialTrait for GGXMetal
 {
     fn scatter_direction(&self, rng: &mut TlsWyRand, incoming: glam::Vec3A, normal: glam::Vec3A, _front_facing: bool) -> glam::Vec3A
     {
@@ -259,10 +273,10 @@ impl GGXDielectric
 
     fn g(&self, wi: glam::Vec3A, wo: glam::Vec3A, h: glam::Vec3A, n: glam::Vec3A) -> f32 { self.g_separable(wi, h, n) * self.g_separable(wo, h, n) }
 
-    pub fn new(absorption: glam::Vec3A, colour: glam::Vec3A, ior: f32, a: f32) -> Self { Self { absorption, colour, ior, a } }
+    pub fn new(absorption: glam::Vec3A, colour: glam::Vec3A, ior: f32, a: f32) -> Material { Self { absorption, colour, ior, a }.into() }
 }
 
-impl Material for GGXDielectric
+impl MaterialTrait for GGXDielectric
 {
     fn scatter_direction(&self, rng: &mut TlsWyRand, incoming: Vec3A, normal: Vec3A, front_facing: bool) -> glam::Vec3A
     {
@@ -386,7 +400,7 @@ pub struct Dielectric
 
 impl Dielectric
 {
-    pub fn new(colour: glam::Vec3A, ior: f32) -> Self { Self { colour, ior } }
+    pub fn new(colour: glam::Vec3A, ior: f32) -> Material { Self { colour, ior }.into() }
 
     fn f(cosine: f32, eta: f32) -> f32
     {
@@ -396,7 +410,7 @@ impl Dielectric
     }
 }
 
-impl Material for Dielectric
+impl MaterialTrait for Dielectric
 {
     fn scatter_direction(&self, rng: &mut TlsWyRand, incoming: Vec3A, normal: Vec3A, front_facing: bool) -> glam::Vec3A
     {

@@ -1,6 +1,8 @@
+use std::ops::Deref;
 use std::path::Path;
 
 use crate::tlas::blas::primitive::material;
+use crate::Material;
 
 pub struct HitInfo
 {
@@ -26,12 +28,12 @@ pub struct VertexRef
 pub struct Model<'c>
 {
     pub file_path: &'c Path,
-    pub material: &'c (dyn material::Material),
+    pub material: &'c Material,
 }
 
 impl<'c> Model<'c>
 {
-    pub fn new<P>(file_path: &'c P, material: &'c (dyn material::Material)) -> Self
+    pub fn new<P>(file_path: &'c P, material: &'c Material) -> Self
     where
         P: ?Sized + AsRef<Path>,
     {
