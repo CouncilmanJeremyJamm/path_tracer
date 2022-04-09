@@ -7,8 +7,8 @@ use rayon::prelude::{IndexedParallelIterator, IntoParallelRefIterator, ParallelI
 
 use tlas_bvh::{BLASInfo, TLASNode, TLASNodeType};
 
-use crate::tlas::blas::BLAS;
-use crate::{HitInfo, Material, MaterialTrait, Model, Ray, Triangle};
+use crate::tlas::blas::{push_to_stack, BLAS};
+use crate::{HitInfo, Material, Model, Ray, Triangle};
 
 pub mod blas;
 mod tlas_bvh;
@@ -79,33 +79,7 @@ impl<'a> TLAS<'a>
 
             match &current.node_type
             {
-                TLASNodeType::Branch { left, right } =>
-                {
-                    let intersect_left = left.bounding_box.intersect_t(r, t_max);
-                    let intersect_right = right.bounding_box.intersect_t(r, t_max);
-
-                    if let (Some(t_enter_left), Some(t_enter_right)) = (intersect_left, intersect_right)
-                    {
-                        if t_enter_left < t_enter_right
-                        {
-                            stack.push((right, t_enter_right));
-                            stack.push((left, t_enter_left));
-                        }
-                        else
-                        {
-                            stack.push((left, t_enter_left));
-                            stack.push((right, t_enter_right));
-                        }
-                    }
-                    else if let Some(t_enter_left) = intersect_left
-                    {
-                        stack.push((left, t_enter_left));
-                    }
-                    else if let Some(t_enter_right) = intersect_right
-                    {
-                        stack.push((right, t_enter_right));
-                    }
-                }
+                TLASNodeType::Branch { left, right } => push_to_stack(r, t_max, &mut stack, left, right),
                 TLASNodeType::Leaf { blas_index } =>
                 {
                     let blas: &BLAS = &self.blas_vec[*blas_index as usize];

@@ -8,8 +8,8 @@ use rayon::prelude::{IndexedParallelIterator, IntoParallelRefIterator, ParallelI
 use primitive::model::{Model, Vertex, VertexRef};
 use primitive::Triangle;
 
-use crate::tlas::blas::blas_bvh::{BLASNode, BLASNodeType, PrimitiveInfo};
-use crate::{HitInfo, Material, MaterialTrait, Ray};
+use crate::tlas::blas::blas_bvh::{BLASNode, BLASNodeType, HasBox, PrimitiveInfo};
+use crate::{HitInfo, Material, Ray};
 
 pub mod blas_bvh;
 pub mod primitive;
@@ -105,6 +105,36 @@ pub fn load_obj(path: &std::path::Path) -> Vec<Vertex>
     vertices
 }
 
+pub fn push_to_stack<'a, 'b, N>(r: &Ray, t_max: f32, stack: &'b mut std::vec::Vec<(&'a N, f32), &bumpalo::Bump>, left: &'a N, right: &'a N)
+where
+    N: HasBox,
+{
+    let intersect_left = left.get_box().intersect_t(r, t_max);
+    let intersect_right = right.get_box().intersect_t(r, t_max);
+
+    if let (Some(t_enter_left), Some(t_enter_right)) = (intersect_left, intersect_right)
+    {
+        if t_enter_left < t_enter_right
+        {
+            stack.push((right, t_enter_right));
+            stack.push((left, t_enter_left));
+        }
+        else
+        {
+            stack.push((left, t_enter_left));
+            stack.push((right, t_enter_right));
+        }
+    }
+    else if let Some(t_enter_left) = intersect_left
+    {
+        stack.push((left, t_enter_left));
+    }
+    else if let Some(t_enter_right) = intersect_right
+    {
+        stack.push((right, t_enter_right));
+    }
+}
+
 pub(super) struct BLAS<'a>
 {
     pub primitives: Vec<Triangle>,
@@ -142,7 +172,7 @@ impl<'a> BLAS<'a>
     {
         let mut stack: Vec<(&BLASNode, f32), _> = Vec::with_capacity_in(1, bump);
         stack.push((&self.bvh, 0.0));
-        let mut closest: Option<(HitInfo, &Triangle)> = None;
+        let mut closest: Option<(HitInfo, u32)> = None;
 
         while let Some((current, t_enter)) = stack.pop()
         {
@@ -153,41 +183,15 @@ impl<'a> BLAS<'a>
 
             match &current.node_type
             {
-                BLASNodeType::Branch { left, right } =>
-                {
-                    let intersect_left = left.bounding_box.intersect_t(r, t_max);
-                    let intersect_right = right.bounding_box.intersect_t(r, t_max);
-
-                    if let (Some(t_enter_left), Some(t_enter_right)) = (intersect_left, intersect_right)
-                    {
-                        if t_enter_left < t_enter_right
-                        {
-                            stack.push((right, t_enter_right));
-                            stack.push((left, t_enter_left));
-                        }
-                        else
-                        {
-                            stack.push((left, t_enter_left));
-                            stack.push((right, t_enter_right));
-                        }
-                    }
-                    else if let Some(t_enter_left) = intersect_left
-                    {
-                        stack.push((left, t_enter_left));
-                    }
-                    else if let Some(t_enter_right) = intersect_right
-                    {
-                        stack.push((right, t_enter_right));
-                    }
-                }
-                BLASNodeType::Leaf { primitive_indices } if primitive_indices.len() == 1 =>
+                BLASNodeType::Branch { left, right } => push_to_stack(r, t_max, &mut stack, left, right),
+                BLASNodeType::LeafSingle { primitive_index } =>
                 //Fast path for single child
                 {
-                    let primitive: &Triangle = &self.primitives[primitive_indices[0] as usize];
+                    let primitive: &Triangle = &self.primitives[*primitive_index as usize];
                     if let Some(intersection) = primitive.intersect(r, t_max)
                     {
                         t_max = intersection.t;
-                        closest = Some((intersection, primitive));
+                        closest = Some((intersection, *primitive_index));
                     }
                 }
                 BLASNodeType::Leaf { primitive_indices } =>
@@ -198,13 +202,13 @@ impl<'a> BLAS<'a>
                         .min_by(|a, b| a.0.t.total_cmp(&b.0.t))
                     {
                         t_max = intersection.0.t;
-                        closest = Some((intersection.0, &self.primitives[intersection.1 as usize]));
+                        closest = Some(intersection);
                     }
                 }
             }
         }
 
-        closest.map(|(intersection, primitive)| (intersection, primitive, self.material))
+        closest.map(|(intersection, primitive_index)| (intersection, &self.primitives[primitive_index as usize], self.material))
     }
     pub fn any_intersect(&self, bump: &Bump, r: &Ray, t_max: f32) -> bool
     {
@@ -225,10 +229,10 @@ impl<'a> BLAS<'a>
                     stack.push(left);
                     stack.push(right);
                 }
-                BLASNodeType::Leaf { primitive_indices } if primitive_indices.len() == 1 =>
+                BLASNodeType::LeafSingle { primitive_index } =>
                 //Fast path for single child
                 {
-                    if self.primitives[primitive_indices[0] as usize].intersect_bool(r, t_max)
+                    if self.primitives[*primitive_index as usize].intersect_bool(r, t_max)
                     {
                         return true;
                     }

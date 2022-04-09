@@ -1,7 +1,5 @@
-use std::ops::Deref;
 use std::path::Path;
 
-use crate::tlas::blas::primitive::material;
 use crate::Material;
 
 pub struct HitInfo

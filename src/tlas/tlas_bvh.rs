@@ -1,6 +1,7 @@
 use std::cmp::Ordering;
 
 use crate::tlas::blas::blas_bvh::boundingbox::{surrounding_box, AABB};
+use crate::tlas::blas::blas_bvh::HasBox;
 
 pub(super) struct BLASInfo
 {
@@ -35,6 +36,11 @@ pub(super) struct TLASNode
 {
     pub bounding_box: AABB,
     pub node_type: TLASNodeType,
+}
+
+impl HasBox for TLASNode
+{
+    fn get_box(&self) -> &AABB { &self.bounding_box }
 }
 
 impl TLASNode

@@ -37,6 +37,10 @@ impl PrimitiveInfo
 
 pub(crate) enum BLASNodeType
 {
+    LeafSingle
+    {
+        primitive_index: u32
+    },
     Leaf
     {
         primitive_indices: Vec<u32>
@@ -47,10 +51,20 @@ pub(crate) enum BLASNodeType
     },
 }
 
+pub trait HasBox
+{
+    fn get_box(&self) -> &AABB;
+}
+
 pub(crate) struct BLASNode
 {
     pub(crate) bounding_box: AABB,
     pub(crate) node_type: BLASNodeType,
+}
+
+impl HasBox for BLASNode
+{
+    fn get_box(&self) -> &AABB { &self.bounding_box }
 }
 
 impl BLASNode
@@ -64,8 +78,8 @@ impl BLASNode
         {
             Self {
                 bounding_box: object_info[0].bounding_box,
-                node_type: BLASNodeType::Leaf {
-                    primitive_indices: vec![object_info[0].primitive_index],
+                node_type: BLASNodeType::LeafSingle {
+                    primitive_index: object_info[0].primitive_index,
                 },
             }
         }
