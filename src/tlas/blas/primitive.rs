@@ -38,12 +38,12 @@ impl Triangle
         self.normals * glam::Vec3A::new(w, u, v)
     }
 
-    pub fn intersect(&self, ray: &Ray, t_max: f32) -> Option<HitInfo>
+    pub fn intersect_naive(&self, ray: &Ray, t_min: f32, t_max: f32) -> Option<HitInfo>
     {
         let p_vec: glam::Vec3A = glam::Vec3A::cross(ray.direction, self.b);
         let determinant: f32 = glam::Vec3A::dot(self.a, p_vec);
 
-        if determinant.abs() < EPSILON
+        if determinant.abs() < 1e-10
         {
             return None;
         }
@@ -68,7 +68,7 @@ impl Triangle
 
         let t: f32 = glam::Vec3A::dot(self.b, q_vec) * inv_determinant;
         //println!("{}", t);
-        if t < EPSILON || t > t_max
+        if t < t_min || t > t_max
         {
             return None;
         }
@@ -86,12 +86,26 @@ impl Triangle
         Some(hit_info)
     }
 
-    pub fn intersect_bool(&self, ray: &Ray, t_max: f32) -> bool
+    pub fn intersect(&self, ray: &Ray, t_max: f32, t_estimate: f32) -> Option<HitInfo>
+    {
+        let moved_ray: Ray = Ray {
+            origin: ray.at(t_estimate),
+            ..*ray
+        };
+
+        self.intersect_naive(&moved_ray, EPSILON - t_estimate, t_max - t_estimate)
+            .map(|hit_info| HitInfo {
+                t: hit_info.t + t_estimate,
+                ..hit_info
+            })
+    }
+
+    fn intersect_bool_naive(&self, ray: &Ray, t_min: f32, t_max: f32) -> bool
     {
         let p_vec: glam::Vec3A = glam::Vec3A::cross(ray.direction, self.b);
         let determinant: f32 = glam::Vec3A::dot(self.a, p_vec);
 
-        if determinant.abs() < EPSILON
+        if determinant.abs() < 1e-10
         {
             return false;
         }
@@ -116,12 +130,22 @@ impl Triangle
 
         let t: f32 = glam::Vec3A::dot(self.b, q_vec) * inv_determinant;
 
-        if t < EPSILON || t > t_max
+        if t < t_min || t > t_max
         {
             return false;
         }
 
         true
+    }
+
+    pub fn intersect_bool(&self, ray: &Ray, t_max: f32, t_estimate: f32) -> bool
+    {
+        let moved_ray: Ray = Ray {
+            origin: ray.at(t_estimate),
+            ..*ray
+        };
+
+        self.intersect_bool_naive(&moved_ray, EPSILON - t_estimate, t_max - t_estimate)
     }
 
     pub fn create_bounding_box(&self) -> AABB

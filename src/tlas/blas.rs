@@ -188,21 +188,23 @@ impl<'a> BLAS<'a>
                 //Fast path for single child
                 {
                     let primitive: &Triangle = &self.primitives[*primitive_index as usize];
-                    if let Some(intersection) = primitive.intersect(r, t_max)
+                    if let Some(intersection) = primitive.intersect(r, t_max, t_enter)
                     {
                         t_max = intersection.t;
                         closest = Some((intersection, *primitive_index));
+                        //println!("{} {}", t_enter, t_max);
                     }
                 }
                 BLASNodeType::Leaf { primitive_indices } =>
                 {
                     if let Some(intersection) = primitive_indices
                         .iter()
-                        .filter_map(|i| self.primitives[*i as usize].intersect(r, t_max).zip(Some(*i)))
+                        .filter_map(|i| self.primitives[*i as usize].intersect(r, t_max, t_enter).zip(Some(*i)))
                         .min_by(|a, b| a.0.t.total_cmp(&b.0.t))
                     {
                         t_max = intersection.0.t;
                         closest = Some(intersection);
+                        //println!("{} {}", t_enter, t_max);
                     }
                 }
             }
@@ -217,31 +219,31 @@ impl<'a> BLAS<'a>
 
         while let Some(current) = stack.pop()
         {
-            if !current.bounding_box.intersect(r, t_max)
+            if let Some(t_enter) = current.bounding_box.intersect_t(r, t_max)
             {
-                continue;
-            }
-
-            match &current.node_type
-            {
-                BLASNodeType::Branch { left, right } =>
+                match &current.node_type
                 {
-                    stack.push(left);
-                    stack.push(right);
-                }
-                BLASNodeType::LeafSingle { primitive_index } =>
-                //Fast path for single child
-                {
-                    if self.primitives[*primitive_index as usize].intersect_bool(r, t_max)
+                    BLASNodeType::Branch { left, right } =>
                     {
-                        return true;
+                        stack.push(left);
+                        stack.push(right);
                     }
-                }
-                BLASNodeType::Leaf { primitive_indices } =>
-                {
-                    if primitive_indices.iter().any(|i| self.primitives[*i as usize].intersect_bool(r, t_max))
+                    BLASNodeType::LeafSingle { primitive_index } =>
+                    //Fast path for single child
                     {
-                        return true;
+                        if self.primitives[*primitive_index as usize].intersect_bool(r, t_max, t_enter)
+                        {
+                            return true;
+                        }
+                    }
+                    BLASNodeType::Leaf { primitive_indices } =>
+                    {
+                        if primitive_indices
+                            .iter()
+                            .any(|i| self.primitives[*i as usize].intersect_bool(r, t_max, t_enter))
+                        {
+                            return true;
+                        }
                     }
                 }
             }
