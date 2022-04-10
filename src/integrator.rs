@@ -3,7 +3,7 @@ use image::{DynamicImage, GenericImageView, ImageResult};
 use nanorand::tls::TlsWyRand;
 use nanorand::Rng;
 
-use crate::{BsdfPdf, HitInfo, Material, MaterialTrait, Ray, ENABLE_NEE, EPSILON, INFINITY, TLAS};
+use crate::{BsdfPdf, HitInfo, Material, MaterialTrait, Ray, Scene, Triangle, ENABLE_NEE, EPSILON, INFINITY};
 
 const MIN_PDF: f32 = 1e-8;
 
@@ -14,13 +14,13 @@ fn balance_heuristic(f: f32, g: f32) -> f32 { f / (f + g) }
 #[inline]
 fn power_heuristic(f: f32, g: f32) -> f32 { (f * f) / (f * f + g * g) }
 
-fn estimate_direct(rng: &mut TlsWyRand, bump: &Bump, r: &Ray, hit_info: &HitInfo, mat: &Material, world: &TLAS, lights: &TLAS) -> glam::Vec3A
+fn estimate_direct(rng: &mut TlsWyRand, bump: &Bump, r: &Ray, hit_info: &HitInfo, mat: &Material, scene: &Scene) -> glam::Vec3A
 {
     let mut direct: glam::Vec3A = glam::Vec3A::ZERO;
     let incoming: glam::Vec3A = -r.direction;
 
-    let (num_lights, light_material, light) = lights.random_primitive(rng);
-
+    let (light_material, light, pdf): (&Material, &Triangle, f32) = scene.sample_lights(rng);
+    //println!("{}", pdf);
     let (point, light_normal): (glam::Vec3A, glam::Vec3A) = light.random_point(rng);
 
     let o: glam::Vec3A = r.at(hit_info.t);
@@ -28,10 +28,10 @@ fn estimate_direct(rng: &mut TlsWyRand, bump: &Bump, r: &Ray, hit_info: &HitInfo
 
     let light_ray: Ray = Ray::new(o, d);
 
-    if !world.any_intersect(bump, &light_ray, 1.0 - EPSILON)
+    if !scene.world.any_intersect(bump, &light_ray, 1.0 - EPSILON)
     {
         let cosine: f32 = glam::Vec3A::dot(d.normalize(), light_normal).abs();
-        let light_pdf: f32 = d.length_squared() / (cosine * light.area() * (num_lights as f32));
+        let light_pdf: f32 = d.length_squared() * pdf / (cosine * light.area());
 
         let light_info: BsdfPdf = mat.get_brdf_pdf(incoming, light_ray.direction, hit_info);
 
@@ -49,12 +49,14 @@ fn estimate_direct(rng: &mut TlsWyRand, bump: &Bump, r: &Ray, hit_info: &HitInfo
 
     if !material_ray.direction.is_nan()
     {
-        if let Some((material_hi, intersected, material)) = lights.intersect(bump, &material_ray, INFINITY)
+        if let Some((material_hi, intersected, material)) = scene.lights.intersect(bump, &material_ray, INFINITY)
         {
-            if !world.any_intersect(bump, &material_ray, material_hi.t * (1.0 - EPSILON))
+            if !scene.world.any_intersect(bump, &material_ray, material_hi.t * (1.0 - EPSILON))
             {
+                let p: f32 = scene.light_sampler.get_sample_pdf(intersected, material);
+
                 let cosine: f32 = glam::Vec3A::dot(material_ray.direction, material_hi.normal).abs();
-                let light_pdf: f32 = material_hi.t * material_hi.t / (cosine * intersected.area() * (num_lights as f32));
+                let light_pdf: f32 = material_hi.t * material_hi.t * p / (cosine * intersected.area());
 
                 let material_info: BsdfPdf = mat.get_brdf_pdf(incoming, material_ray.direction, hit_info);
 
@@ -71,8 +73,9 @@ fn estimate_direct(rng: &mut TlsWyRand, bump: &Bump, r: &Ray, hit_info: &HitInfo
     direct
 }
 
-pub fn integrate(rng: &mut TlsWyRand, mut r: Ray, world: &TLAS, lights: &TLAS, env: &ImageResult<DynamicImage>, max_bounces: u32) -> glam::Vec3A
+pub(crate) fn integrate(mut r: Ray, scene: &Scene, env: &ImageResult<DynamicImage>, max_bounces: u32) -> glam::Vec3A
 {
+    let mut rng: TlsWyRand = nanorand::tls_rng();
     let bump: Bump = Bump::new();
 
     let mut accumulated: glam::Vec3A = glam::Vec3A::ZERO;
@@ -82,7 +85,7 @@ pub fn integrate(rng: &mut TlsWyRand, mut r: Ray, world: &TLAS, lights: &TLAS, e
 
     for b in 0..=max_bounces
     {
-        if let Some((hit_info, _, material)) = world.intersect(&bump, &r, INFINITY)
+        if let Some((hit_info, _, material)) = scene.world.intersect(&bump, &r, INFINITY)
         {
             let wi: glam::Vec3A = -r.direction;
 
@@ -97,12 +100,12 @@ pub fn integrate(rng: &mut TlsWyRand, mut r: Ray, world: &TLAS, lights: &TLAS, e
 
                 if ENABLE_NEE && !is_delta
                 {
-                    accumulated += path_weight * estimate_direct(rng, &bump, &r, &hit_info, material, world, lights);
+                    accumulated += path_weight * estimate_direct(&mut rng, &bump, &r, &hit_info, material, scene);
                 }
 
                 r = Ray::new(
                     r.at(hit_info.t),
-                    material.scatter_direction(rng, r.direction, hit_info.normal, hit_info.front_facing),
+                    material.scatter_direction(&mut rng, r.direction, hit_info.normal, hit_info.front_facing),
                 );
 
                 if r.direction.is_nan()

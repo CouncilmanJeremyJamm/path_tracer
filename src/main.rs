@@ -1,4 +1,4 @@
-#![allow(clippy::upper_case_acronyms)]
+#![allow(clippy::upper_case_acronyms, clippy::new_ret_no_self)]
 #![feature(allocator_api, array_chunks, bool_to_option)]
 extern crate core;
 
@@ -10,6 +10,7 @@ use tlas::blas::primitive::Triangle;
 
 use crate::camera::Camera;
 use crate::ray::Ray;
+use crate::scene::Scene;
 use crate::tlas::TLAS;
 use crate::utility::{EPSILON, INFINITY};
 
@@ -19,13 +20,14 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 mod camera;
 mod integrator;
 mod ray;
+mod scene;
 mod tlas;
 mod utility;
 
 const ASPECT_RATIO: f32 = 1.0;
 const IMAGE_WIDTH: usize = 1000;
 const IMAGE_HEIGHT: usize = ((IMAGE_WIDTH as f32) / ASPECT_RATIO) as usize;
-const SAMPLES_PER_PIXEL: u32 = 128;
+const SAMPLES_PER_PIXEL: u32 = 32;
 const MAX_BOUNCES: u32 = 1024;
 
 const ENABLE_NEE: bool = true;
@@ -85,28 +87,26 @@ fn main()
     let glass = Dielectric::new(glam::Vec3A::new(0.7, 0.7, 0.7), 1.5);
     let mirror = Specular::new(glam::Vec3A::ONE);
 
-    let light = Emissive::new(glam::Vec3A::new(10.0, 10.0, 10.0));
+    let light = Emissive::new(glam::Vec3A::splat(10.0));
+    let off_light = Emissive::new(glam::Vec3A::ZERO);
 
     //Models and BVHs
     println!("Loading models, building BVHs...\n");
 
-    let lights_model: Model = Model::new("models/cornell/cb_light.obj", &light);
-    let lights: TLAS = TLAS::new(vec![lights_model]);
-
-    let world_models: Vec<Model> = vec![
+    let models: Vec<Model> = vec![
         Model::new("models/cornell/cb_light.obj", &light),
         Model::new("models/cornell/cb_main.obj", &diffuse_gray),
-        Model::new("models/cornell/cb_right.obj", &diffuse_red),
+        Model::new("models/cornell/cb_right.obj", &off_light),
         Model::new("models/cornell/cb_left.obj", &diffuse_green),
         //Model::new("models/cornell/cb_box_tall.obj", &diffuse_gray),
         //Model::new("models/cornell/cb_box_short.obj", &diffuse_gray),
         //Model::new("models/sphere_offset.obj", &glass),
         Model::new("models/zenobia.obj", &diffuse_gray),
-        Model::new("models/cornell/dragon.obj", &ggx_blue),
+        Model::new("models/cornell/dragon.obj", &off_light),
         //Model::new("models/sphere.obj", &mirror),
     ];
 
-    let world: TLAS = TLAS::new(world_models);
+    let scene: Scene = Scene::new(models);
 
     //Camera
     println!("Initialising camera...");
@@ -137,8 +137,7 @@ fn main()
                     let v: f32 = (y as f32 + offset.y) / (IMAGE_HEIGHT as f32);
 
                     let ray: Ray = cam.create_ray(u, v);
-                    let mut rng = nanorand::tls_rng();
-                    accumulated + integrator::integrate(&mut rng, ray, &world, &lights, &env, MAX_BOUNCES)
+                    accumulated + integrator::integrate(ray, &scene, &env, MAX_BOUNCES)
                 })
                 / (SAMPLES_PER_PIXEL as f32)
         })

@@ -1,22 +1,20 @@
 use std::time::Instant;
 
 use bumpalo::Bump;
-use nanorand::tls::TlsWyRand;
-use nanorand::Rng;
 use rayon::prelude::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
 use tlas_bvh::{BLASInfo, TLASNode, TLASNodeType};
 
+use crate::scene::light_sampler::LightSampler;
 use crate::tlas::blas::{push_to_stack, BLAS};
 use crate::{HitInfo, Material, Model, Ray, Triangle};
 
 pub mod blas;
 mod tlas_bvh;
 
-pub struct TLAS<'a>
+pub(crate) struct TLAS<'a>
 {
-    blas_vec: Vec<BLAS<'a>>,
-    num_primitives: usize,
+    pub blas_vec: Vec<BLAS<'a>>,
     bvh: TLASNode,
 }
 
@@ -28,8 +26,6 @@ impl<'a> TLAS<'a>
 
         let blas_vec: Vec<BLAS<'a>> = models.par_iter().map(BLAS::new).collect();
 
-        let num_primitives: usize = blas_vec.iter().map(|blas| blas.primitives.len()).sum();
-
         let mut blas_info: Vec<BLASInfo> = blas_vec
             .par_iter()
             .enumerate()
@@ -40,22 +36,19 @@ impl<'a> TLAS<'a>
 
         println!("TLAS: {:?}\n", timer.elapsed());
 
-        Self {
-            blas_vec,
-            num_primitives,
-            bvh,
-        }
+        Self { blas_vec, bvh }
     }
 
-    pub fn random_primitive(&self, rng: &mut TlsWyRand) -> (usize, &Material, &Triangle)
+    pub fn generate_lights(&self) -> LightSampler
     {
-        let blas: &BLAS = &self.blas_vec[rng.generate_range(0..self.blas_vec.len())];
+        let lights: Vec<_> = self
+            .blas_vec
+            .iter()
+            .enumerate()
+            .flat_map(|(i, blas)| blas.generate_lights(i as u8))
+            .collect();
 
-        (
-            self.num_primitives,
-            blas.material,
-            &blas.primitives[rng.generate_range(0..blas.primitives.len())],
-        )
+        LightSampler::new(lights)
     }
 
     pub fn intersect(&self, bump: &Bump, r: &Ray, mut t_max: f32) -> Option<(HitInfo, &Triangle, &Material)>

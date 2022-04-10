@@ -23,6 +23,7 @@ pub struct VertexRef
     pub normal: usize,
 }
 
+#[derive(Clone)]
 pub struct Model<'c>
 {
     pub file_path: &'c Path,

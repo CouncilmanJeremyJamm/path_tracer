@@ -9,7 +9,7 @@ use primitive::model::{Model, Vertex, VertexRef};
 use primitive::Triangle;
 
 use crate::tlas::blas::blas_bvh::{BLASNode, BLASNodeType, HasBox, PrimitiveInfo};
-use crate::{HitInfo, Material, Ray};
+use crate::{HitInfo, Material, MaterialTrait, Ray};
 
 pub mod blas_bvh;
 pub mod primitive;
@@ -135,7 +135,7 @@ where
     }
 }
 
-pub(super) struct BLAS<'a>
+pub(crate) struct BLAS<'a>
 {
     pub primitives: Vec<Triangle>,
     pub material: &'a Material,
@@ -166,6 +166,18 @@ impl<'a> BLAS<'a>
             material: model.material,
             bvh,
         }
+    }
+
+    pub fn generate_lights(&self, blas_index: u8) -> Vec<(u8, u32, f32)>
+    {
+        self.primitives
+            .iter()
+            .enumerate()
+            .map(|(primitive_index, p)| {
+                let weight: f32 = p.area() * self.material.get_emitted().length();
+                (blas_index, primitive_index as u32, weight)
+            })
+            .collect()
     }
 
     pub fn intersect(&self, bump: &Bump, r: &Ray, mut t_max: f32) -> Option<(HitInfo, &Triangle, &Material)>
