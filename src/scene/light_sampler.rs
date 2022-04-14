@@ -36,7 +36,7 @@ impl LightSampler
     pub fn sample(&self, rng: &mut TlsWyRand) -> LightItem
     {
         let x: f32 = rng.generate();
-        let index: usize = self.lights_cdf.partition_point(|&cdf| cdf < x);
+        let index: usize = self.lights_cdf.binary_search_by(|a| a.total_cmp(&x)).unwrap_or_else(|i| i);
 
         self.lights[index]
     }
