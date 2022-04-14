@@ -2,6 +2,7 @@ use bumpalo::Bump;
 use image::{DynamicImage, GenericImageView, ImageResult};
 use nanorand::tls::TlsWyRand;
 use nanorand::Rng;
+use nohash_hasher::IntSet;
 
 use crate::{BsdfPdf, HitInfo, Material, MaterialTrait, Ray, Scene, Triangle, ENABLE_NEE, EPSILON, INFINITY};
 
@@ -83,7 +84,7 @@ pub(crate) fn integrate(mut r: Ray, scene: &Scene, env: &ImageResult<DynamicImag
 
     let mut last_delta: bool = false;
 
-    let mut volume_stack: Vec<&Material, _> = Vec::new_in(&bump);
+    let mut volume_stack: IntSet<&Material> = IntSet::default();
 
     for b in 0..=max_bounces
     {
@@ -107,11 +108,11 @@ pub(crate) fn integrate(mut r: Ray, scene: &Scene, env: &ImageResult<DynamicImag
                 {
                     if hit_info.front_facing
                     {
-                        volume_stack.push(material);
+                        volume_stack.insert(material);
                     }
-                    else if let Some(i) = volume_stack.iter().position(|&m| std::ptr::eq(m, material))
+                    else
                     {
-                        volume_stack.swap_remove(i);
+                        volume_stack.remove(&material);
                     }
                 }
 

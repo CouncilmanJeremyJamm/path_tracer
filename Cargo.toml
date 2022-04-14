@@ -27,4 +27,5 @@ features = ["tls"]
 bumpalo = { version = "3.9.1", features = ["allocator_api"] }
 enum_dispatch = "0.3.8"
 glam = "0.20.2"
+nohash-hasher = "0.2.0"
 rayon = "1.5.1"

@@ -1,3 +1,5 @@
+use std::hash::{Hash, Hasher};
+
 use enum_dispatch::enum_dispatch;
 use glam::{Mat3A, Vec3A};
 use nanorand::tls::TlsWyRand;
@@ -61,6 +63,24 @@ pub enum Material
     GGXDielectric,
     Dielectric,
 }
+
+impl Hash for &Material
+{
+    fn hash<H: Hasher>(&self, hasher: &mut H)
+    {
+        let ptr = (*self) as *const Material;
+        hasher.write_usize(ptr as usize);
+    }
+}
+
+impl nohash_hasher::IsEnabled for &Material {}
+
+impl PartialEq<Self> for &Material
+{
+    fn eq(&self, other: &Self) -> bool { std::ptr::eq(*self, *other) }
+}
+
+impl Eq for &Material {}
 
 pub struct Lambertian
 {
