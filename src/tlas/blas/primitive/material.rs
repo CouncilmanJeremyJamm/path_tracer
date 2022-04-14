@@ -1,5 +1,5 @@
 use enum_dispatch::enum_dispatch;
-use glam::Vec3A;
+use glam::{Mat3A, Vec3A};
 use nanorand::tls::TlsWyRand;
 use nanorand::Rng;
 
@@ -31,11 +31,12 @@ pub trait MaterialTrait: Sync + Send
     fn scatter_direction(&self, rng: &mut TlsWyRand, incoming: glam::Vec3A, normal: glam::Vec3A, front_facing: bool) -> glam::Vec3A;
     fn get_brdf_pdf(&self, incoming: glam::Vec3A, outgoing: glam::Vec3A, hi: &HitInfo) -> BsdfPdf;
     fn get_emitted(&self) -> glam::Vec3A { glam::Vec3A::ZERO }
-    fn get_transmission(&self, _r: Ray, _t: f32) -> glam::Vec3A { glam::Vec3A::ZERO }
-    fn volume_scatter(&self, r: Ray, _t: f32) -> (bool, glam::Vec3A) { (false, r.direction) }
+    fn get_transmission(&self, _: &Ray, _: f32) -> glam::Vec3A { glam::Vec3A::ZERO }
+    fn volume_scatter(&self, r: Ray, _: f32) -> (bool, glam::Vec3A) { (false, r.direction) }
 
     fn is_delta(&self) -> bool { false }
     fn is_emissive(&self) -> bool { false }
+    fn is_absorbing(&self) -> bool { false }
 
     fn get_weakening(&self, wo: glam::Vec3A, n: glam::Vec3A) -> f32
     {
@@ -130,12 +131,18 @@ impl MaterialTrait for Specular
 struct GGX {}
 impl GGX
 {
-    fn d(n: glam::Vec3A, h: glam::Vec3A, a: f32) -> f32
+    fn d(h: glam::Vec3A, a: f32) -> f32
     {
-        let n_dot_h: f32 = glam::Vec3A::dot(n, h);
-        let x: f32 = (n_dot_h * n_dot_h * (a * a - 1.0)) + 1.0;
+        if h.z <= 0.0
+        {
+            return 0.0;
+        }
 
-        a * a * std::f32::consts::FRAC_1_PI / (x * x)
+        let cosine_sq: f32 = h.z * h.z;
+        let tan_sq: f32 = (1.0 - cosine_sq).sqrt() / cosine_sq;
+
+        let x: f32 = (a * a) + tan_sq;
+        a * a / (std::f32::consts::PI * cosine_sq * cosine_sq * x * x)
     }
 
     fn generate_half_vector(rng: &mut TlsWyRand, incoming: glam::Vec3A, normal: glam::Vec3A, a: f32) -> glam::Vec3A
@@ -173,7 +180,6 @@ impl GGX
     }
 }
 
-//TODO: pack colour and a
 pub struct GGXMetal
 {
     colour: glam::Vec3A,
@@ -184,22 +190,19 @@ impl GGXMetal
 {
     fn f(&self, v_dot_h: f32) -> glam::Vec3A { self.colour + ((1.0 - self.colour) * (1.0 - v_dot_h).powi(5)) }
 
-    fn g(&self, n: glam::Vec3A, wi: glam::Vec3A, wo: glam::Vec3A) -> f32
+    fn g(&self, wi: glam::Vec3A, wo: glam::Vec3A) -> f32
     {
-        let n_dot_i: f32 = glam::Vec3A::dot(n, wi);
-        let n_dot_o: f32 = glam::Vec3A::dot(n, wo);
-
-        if n_dot_i <= 0.0 || n_dot_o <= 0.0
+        if wi.z <= 0.0 || wo.z <= 0.0
         {
             return 0.0;
         }
 
         let a_squared: f32 = self.a * self.a;
 
-        let x: f32 = 2.0 * n_dot_i * n_dot_o;
+        let x: f32 = 2.0 * wi.z * wo.z;
         let y: f32 = 1.0 - a_squared;
-        let z: f32 = n_dot_o * (a_squared + (y * n_dot_i * n_dot_i)).sqrt();
-        let w: f32 = n_dot_i * (a_squared + (y * n_dot_o * n_dot_o)).sqrt();
+        let z: f32 = wo.z * (a_squared + (y * wi.z * wi.z)).sqrt();
+        let w: f32 = wi.z * (a_squared + (y * wo.z * wo.z)).sqrt();
 
         x / (z + w)
     }
@@ -223,23 +226,24 @@ impl MaterialTrait for GGXMetal
         reflect(direction, h)
     }
 
-    //TODO: simplify. Precalculate dot products and pass to functions
     fn get_brdf_pdf(&self, incoming: glam::Vec3A, outgoing: glam::Vec3A, hi: &HitInfo) -> BsdfPdf
     {
+        let onb_inv: Mat3A = generate_onb(hi.normal).transpose();
+
         //Outgoing = direction of light ray = -direction of tracing ray
-        //Incoming = direction of reflection
-        let wi: glam::Vec3A = outgoing.normalize();
-        let wo: glam::Vec3A = incoming.normalize();
+        //Incoming = direction of scattering
+        let wi: glam::Vec3A = onb_inv * outgoing.normalize();
+        let wo: glam::Vec3A = onb_inv * incoming.normalize();
 
         let h: glam::Vec3A = (wi + wo).normalize();
-        let d: f32 = GGX::d(hi.normal, h, self.a);
-        let o_dot_h: f32 = glam::Vec3A::dot(wo, h);
+        let d: f32 = GGX::d(h, self.a);
+        let i_dot_h: f32 = glam::Vec3A::dot(wi, h);
 
-        let num: glam::Vec3A = self.f(o_dot_h) * self.g(hi.normal, wi, wo) * d;
-        let denom: f32 = 4.0 * glam::Vec3A::dot(hi.normal, wi) * glam::Vec3A::dot(hi.normal, wo);
+        let num: glam::Vec3A = self.f(i_dot_h) * self.g(wi, wo) * d;
+        let denom: f32 = 4.0 * wi.z * wo.z;
 
         let brdf: glam::Vec3A = num / denom;
-        let pdf: f32 = d * glam::Vec3A::dot(h, hi.normal) / (4.0 * glam::Vec3A::dot(wo, h));
+        let pdf: f32 = d * h.z / (4.0 * glam::Vec3A::dot(wo, h));
 
         BsdfPdf::new(brdf, pdf)
     }
@@ -255,25 +259,42 @@ pub struct GGXDielectric
 
 impl GGXDielectric
 {
-    fn f(&self, v_dot_h: f32, f0: f32) -> f32 { f0 + ((1.0 - f0) * (1.0 - v_dot_h).powi(5)) }
-
-    fn g_separable(&self, v: glam::Vec3A, h: glam::Vec3A, n: glam::Vec3A) -> f32
+    fn f(&self, v_dot_h: f32, f0: f32) -> f32
     {
-        let n_dot_v: f32 = glam::Vec3A::dot(n, v);
+        if v_dot_h.is_finite()
+        {
+            f0 + ((1.0 - f0) * (1.0 - v_dot_h).powi(5))
+        }
+        else
+        {
+            1.0
+        }
+    }
 
-        if n_dot_v / glam::Vec3A::dot(h, v) <= 0.0
+    fn g_separable(&self, v: glam::Vec3A, h: glam::Vec3A) -> f32
+    {
+        if v.z * glam::Vec3A::dot(h, v) <= 0.0
         {
             return 0.0;
         }
 
-        let n_dot_v_sq: f32 = n_dot_v * n_dot_v;
+        let n_dot_v_sq: f32 = v.z * v.z;
         let tan_squared: f32 = (1.0 - n_dot_v_sq) / n_dot_v_sq;
-        2.0 / (1.0 + (1.0 + (self.a * self.a * tan_squared)).sqrt())
+        2.0 / (1.0 + (1.0 + self.a * self.a * tan_squared).sqrt())
     }
 
-    fn g(&self, wi: glam::Vec3A, wo: glam::Vec3A, h: glam::Vec3A, n: glam::Vec3A) -> f32 { self.g_separable(wi, h, n) * self.g_separable(wo, h, n) }
+    fn g(&self, wi: glam::Vec3A, wo: glam::Vec3A, h: glam::Vec3A) -> f32 { self.g_separable(wi, h) * self.g_separable(wo, h) }
 
-    pub fn new(absorption: glam::Vec3A, colour: glam::Vec3A, ior: f32, a: f32) -> Material { Self { absorption, colour, ior, a }.into() }
+    pub fn new(absorption: glam::Vec3A, colour: glam::Vec3A, ior: f32, roughness: f32) -> Material
+    {
+        Self {
+            absorption,
+            colour,
+            ior,
+            a: roughness.powi(2).clamp(0.0001, 0.9999),
+        }
+        .into()
+    }
 }
 
 impl MaterialTrait for GGXDielectric
@@ -284,7 +305,6 @@ impl MaterialTrait for GGXDielectric
 
         //Generate half-vector from the GGX distribution
         let h: glam::Vec3A = GGX::generate_half_vector(rng, direction, normal, self.a);
-        //let h: glam::Vec3A = if -glam::Vec3A::dot(_h, direction) > 0.0 { _h } else { -_h };
 
         if -glam::Vec3A::dot(h, direction) < 1e-10
         {
@@ -292,25 +312,20 @@ impl MaterialTrait for GGXDielectric
         }
 
         //Reflect or refract using the half-vector as the normal
-        let cosine: f32 = -glam::Vec3A::dot(direction, h);
-        let sine: f32 = (1.0 - cosine * cosine).sqrt();
-
-        let eta: f32 = if front_facing { 1.0 / self.ior } else { self.ior };
+        let eta: f32 = if front_facing { self.ior.recip() } else { self.ior };
         let f0: f32 = ((eta - 1.0) / (eta + 1.0)).powi(2);
 
-        let tir: bool = eta * sine > 1.0;
-
-        //Total internal reflection
-        if tir
-        {
-            return reflect(direction, h);
-        }
-
-        //Fresnel term must be calculated from the refracted ray, not the incident ray
-        //Source: https://agraphicsguynotes.com/posts/glass_material_simulated_by_microfacet_bxdf/
         let refracted: glam::Vec3A = refract(direction, h, eta);
 
-        if rng.generate::<f32>() < self.f(-glam::Vec3A::dot(refracted, h), f0)
+        //TODO: Fresnel term uses the refracted direction
+        //Source: https://agraphicsguynotes.com/posts/glass_material_simulated_by_microfacet_bxdf/
+        let f: f32 = self.f(-glam::Vec3A::dot(direction, h), f0);
+
+        //println!("{f}");
+
+        //If refract() returns NaN, this indicates total internal reflection
+        let ray_reflected: bool = refracted.is_nan() || rng.generate::<f32>() < f;
+        if ray_reflected
         {
             reflect(direction, h)
         }
@@ -322,56 +337,58 @@ impl MaterialTrait for GGXDielectric
 
     fn get_brdf_pdf(&self, incoming: Vec3A, outgoing: Vec3A, hi: &HitInfo) -> BsdfPdf
     {
+        let onb_inv: Mat3A = generate_onb(hi.normal).transpose();
+
         //Outgoing = direction of light ray = -direction of tracing ray
         //Incoming = direction of scattering
-        let wi: glam::Vec3A = outgoing.normalize();
-        let wo: glam::Vec3A = incoming.normalize();
+        let wi: glam::Vec3A = onb_inv * outgoing.normalize();
+        let wo: glam::Vec3A = onb_inv * incoming.normalize();
 
-        let eta: f32 = if hi.front_facing { self.ior } else { 1.0 / self.ior };
+        let eta: f32 = if hi.front_facing { self.ior } else { self.ior.recip() };
         let f0: f32 = ((eta - 1.0) / (eta + 1.0)).powi(2);
 
-        if glam::Vec3A::dot(wi, hi.normal) > 0.0
+        let reflected: bool = wo.z * wi.z > 0.0;
+        let _h: glam::Vec3A = if reflected
         {
-            //Incident ray reflected
-            let h: glam::Vec3A = glam::Vec3A::normalize(wi + wo);
-
-            //Calculate reflection BRDF
-            //Schlick's approximation uses the refracted direction
-            let o_dot_h: f32 = glam::Vec3A::dot(wo, h);
-            let r_dot_h: f32 = glam::Vec3A::dot(refract(-wo, h, 1.0 / eta), h);
-
-            let d: f32 = GGX::d(hi.normal, h, self.a);
-            let f: f32 = self.f(-r_dot_h, f0);
-
-            let u: f32 = f * self.g(wi, wo, h, hi.normal) * d;
-            let v: f32 = 4.0 * glam::Vec3A::dot(hi.normal, wi).abs() * glam::Vec3A::dot(hi.normal, wo);
-
-            let brdf: f32 = u / v;
-
-            //Calculate PDF
-            let jacobian: f32 = 1.0 / (4.0 * o_dot_h.abs());
-            let pdf: f32 = d * glam::Vec3A::dot(h, hi.normal) * f * jacobian;
-
-            //Reflections are not affected by material colour
-            BsdfPdf::new(glam::Vec3A::new(brdf, brdf, brdf), pdf)
+            glam::Vec3A::normalize(wi + wo)
         }
         else
         {
-            //Incident ray refracted
-            let _h: glam::Vec3A = ((eta * wi) + wo).normalize();
-            let h: glam::Vec3A = if glam::Vec3A::dot(wo, _h) > 0.0 { _h } else { -_h };
-            let d: f32 = GGX::d(hi.normal, h, self.a);
+            (eta * wi + wo).normalize()
+        };
 
-            let i_dot_h: f32 = glam::Vec3A::dot(wi, h);
-            let o_dot_h: f32 = glam::Vec3A::dot(wo, h);
+        let h: glam::Vec3A = _h * _h.z.signum();
 
+        let i_dot_h: f32 = glam::Vec3A::dot(wi, h);
+        let o_dot_h: f32 = glam::Vec3A::dot(wo, h);
+
+        //let tir: bool = (1.0 - o_dot_h * o_dot_h) / (eta * eta) >= 1.0;
+
+        let d: f32 = GGX::d(h, self.a);
+        //TODO: Schlick's approximation uses the refracted direction
+        //let f: f32 = if tir { 1.0 } else { self.f(i_dot_h.abs(), f0) };
+        let f: f32 = self.f(i_dot_h.abs(), f0);
+        let g: f32 = self.g(wi, wo, h);
+
+        if reflected
+        {
+            //Calculate reflection BRDF
+            let brdf: f32 = f * g * d / (4.0 * (wi.z * wo.z).abs());
+
+            //Calculate PDF
+            let jacobian: f32 = 1.0 / (4.0 * o_dot_h.abs());
+            let pdf: f32 = d * h.z * f * jacobian;
+
+            //Reflections are not affected by material colour
+            BsdfPdf::new(glam::Vec3A::splat(brdf), pdf)
+        }
+        else
+        {
             //Calculate transmission BSDF
             let x: f32 = (i_dot_h * o_dot_h).abs();
-            let y: f32 = (glam::Vec3A::dot(wi, hi.normal) * glam::Vec3A::dot(wo, hi.normal)).abs();
-            //TODO: fix i dot h
-            let f: f32 = self.f(o_dot_h, f0);
+            let y: f32 = (wi.z * wo.z).abs();
 
-            let z: f32 = (1.0 - f) * self.g(wi, wo, h, hi.normal) * d;
+            let z: f32 = (1.0 - f) * g * d;
             let w: f32 = (eta * i_dot_h) + o_dot_h;
 
             let btdf: f32 = (x * z) / (y * w * w);
@@ -380,27 +397,30 @@ impl MaterialTrait for GGXDielectric
             let ja: f32 = o_dot_h.abs();
             let jb: f32 = w;
             let jacobian: f32 = ja / (jb * jb);
-            let pdf: f32 = d * (1.0 - f) * glam::Vec3A::dot(h, hi.normal).abs() * jacobian;
-            //println!("{}", pdf);
-            // if pdf < 0.0
-            // {
-            //     println!("BAD REFRACTION PDF");
-            // }
+            let pdf: f32 = d * (1.0 - f) * h.z.abs() * jacobian;
+
+            //println!("{pdf}");
+
             //Transmission is affected by material colour
-            BsdfPdf::new(self.colour * btdf, pdf)
+            BsdfPdf::new(self.colour * btdf * eta * eta, pdf)
         }
     }
+
+    fn get_transmission(&self, ray: &Ray, t: f32) -> glam::Vec3A { glam::Vec3A::exp(-self.absorption * ray.direction.length() * t) }
+    fn is_absorbing(&self) -> bool { true }
 }
 
+//TODO: fix fresnel in dielectric
 pub struct Dielectric
 {
     colour: glam::Vec3A,
+    absorption: glam::Vec3A,
     ior: f32,
 }
 
 impl Dielectric
 {
-    pub fn new(colour: glam::Vec3A, ior: f32) -> Material { Self { colour, ior }.into() }
+    pub fn new(colour: glam::Vec3A, absorption: glam::Vec3A, ior: f32) -> Material { Self { colour, absorption, ior }.into() }
 
     fn f(cosine: f32, eta: f32) -> f32
     {
@@ -443,5 +463,7 @@ impl MaterialTrait for Dielectric
         }
     }
 
+    fn get_transmission(&self, ray: &Ray, t: f32) -> glam::Vec3A { glam::Vec3A::exp(-self.absorption * ray.direction.length() * t) }
     fn is_delta(&self) -> bool { true }
+    fn is_absorbing(&self) -> bool { true }
 }

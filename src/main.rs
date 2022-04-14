@@ -27,7 +27,7 @@ mod utility;
 const ASPECT_RATIO: f32 = 1.0;
 const IMAGE_WIDTH: usize = 1000;
 const IMAGE_HEIGHT: usize = ((IMAGE_WIDTH as f32) / ASPECT_RATIO) as usize;
-const SAMPLES_PER_PIXEL: u32 = 32;
+const SAMPLES_PER_PIXEL: u32 = 512;
 const MAX_BOUNCES: u32 = 1024;
 
 const ENABLE_NEE: bool = true;
@@ -69,7 +69,7 @@ fn generate_halton(base_x: u32, base_y: u32, num_samples: u32) -> Vec<glam::Vec2
 fn main()
 {
     println!("Loading images...");
-    let env = image::io::Reader::open("images/env/HDR_110_Tunnel_Bg.jpg").unwrap().decode();
+    let env = image::io::Reader::open("images/env/cannon_4k.png").unwrap().decode();
     if env.is_err()
     {
         println!("{:?}", env);
@@ -83,11 +83,12 @@ fn main()
     let diffuse_red = Lambertian::new(glam::Vec3A::new(0.65, 0.05, 0.05));
     let diffuse_blue = Lambertian::new(glam::Vec3A::new(0.05, 0.05, 0.25));
     let ggx_blue = GGXMetal::new(glam::Vec3A::new(0.1, 0.1, 0.45), 0.4);
-    let ggx_blue_2 = GGXDielectric::new(glam::Vec3A::new(0.05, 0.05, 0.05), glam::Vec3A::new(0.95, 0.95, 0.95), 1.5, 0.5);
-    let glass = Dielectric::new(glam::Vec3A::new(0.7, 0.7, 0.7), 1.5);
+    let brown_glass_ggx = GGXDielectric::new(glam::Vec3A::new(0.04, 0.062, 0.07), glam::Vec3A::splat(0.95), 1.5, 0.1);
+    let clear_glass_ggx = GGXDielectric::new(glam::Vec3A::ZERO, glam::Vec3A::ONE, 1.5, 0.0);
+    let glass = Dielectric::new(glam::Vec3A::splat(0.95), glam::Vec3A::new(0.04, 0.062, 0.07), 1.5);
     let mirror = Specular::new(glam::Vec3A::ONE);
 
-    let light = Emissive::new(glam::Vec3A::splat(10.0));
+    let light = Emissive::new(glam::Vec3A::splat(15.0));
     let off_light = Emissive::new(glam::Vec3A::ZERO);
 
     //Models and BVHs
@@ -96,14 +97,14 @@ fn main()
     let models: Vec<Model> = vec![
         Model::new("models/cornell/cb_light.obj", &light),
         Model::new("models/cornell/cb_main.obj", &diffuse_gray),
-        Model::new("models/cornell/cb_right.obj", &off_light),
+        Model::new("models/cornell/cb_right.obj", &diffuse_red),
         Model::new("models/cornell/cb_left.obj", &diffuse_green),
-        //Model::new("models/cornell/cb_box_tall.obj", &diffuse_gray),
-        //Model::new("models/cornell/cb_box_short.obj", &diffuse_gray),
-        //Model::new("models/sphere_offset.obj", &glass),
-        Model::new("models/zenobia.obj", &diffuse_gray),
-        Model::new("models/cornell/dragon.obj", &off_light),
-        //Model::new("models/sphere.obj", &mirror),
+        // //Model::new("models/cornell/cb_box_tall.obj", &diffuse_gray),
+        // //Model::new("models/cornell/cb_box_short.obj", &diffuse_gray),
+        // //Model::new("models/sphere_offset.obj", &glass),
+        Model::new("models/zenobia.obj", &ggx_blue),
+        Model::new("models/cornell/dragon.obj", &brown_glass_ggx),
+        // Model::new("models/sphere.obj", &clear_glass_ggx),
     ];
 
     let scene: Scene = Scene::new(models);

@@ -1,5 +1,5 @@
-use nanorand::Rng;
 use nanorand::tls::TlsWyRand;
+use nanorand::Rng;
 
 pub const EPSILON: f32 = 5e-04;
 pub const INFINITY: f32 = f32::INFINITY;
@@ -24,9 +24,10 @@ pub fn refract(i: glam::Vec3A, n: glam::Vec3A, eta: f32) -> glam::Vec3A
     let n_dot_i: f32 = glam::Vec3A::dot(n, i);
 
     let k: f32 = 1.0 - eta * eta * (1.0 - n_dot_i * n_dot_i);
-    if k < 0.0
+    if k <= 0.0
     {
-        glam::Vec3A::ZERO
+        glam::Vec3A::NAN
+        //panic!("Cannot refract")
     }
     else
     {
