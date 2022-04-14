@@ -27,7 +27,7 @@ mod utility;
 const ASPECT_RATIO: f32 = 1.0;
 const IMAGE_WIDTH: usize = 1000;
 const IMAGE_HEIGHT: usize = ((IMAGE_WIDTH as f32) / ASPECT_RATIO) as usize;
-const SAMPLES_PER_PIXEL: u32 = 512;
+const SAMPLES_PER_PIXEL: u32 = 128;
 const MAX_BOUNCES: u32 = 1024;
 
 const ENABLE_NEE: bool = true;
@@ -103,7 +103,7 @@ fn main()
         // //Model::new("models/cornell/cb_box_short.obj", &diffuse_gray),
         // //Model::new("models/sphere_offset.obj", &glass),
         Model::new("models/zenobia.obj", &ggx_blue),
-        Model::new("models/cornell/dragon.obj", &brown_glass_ggx),
+        Model::new("models/cornell/dragon.obj", &glass),
         // Model::new("models/sphere.obj", &clear_glass_ggx),
     ];
 

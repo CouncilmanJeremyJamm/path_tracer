@@ -424,9 +424,15 @@ impl Dielectric
 
     fn f(cosine: f32, eta: f32) -> f32
     {
-        let f0: f32 = ((eta - 1.0) / (eta + 1.0)).powi(2);
-
-        f0 + ((1.0 - f0) * (1.0 - cosine).powi(5))
+        if eta * eta * (1.0 - cosine * cosine) > 1.0
+        {
+            1.0
+        }
+        else
+        {
+            let f0: f32 = ((eta - 1.0) / (eta + 1.0)).powi(2);
+            f0 + ((1.0 - f0) * (1.0 - cosine).powi(5))
+        }
     }
 }
 
@@ -435,13 +441,11 @@ impl MaterialTrait for Dielectric
     fn scatter_direction(&self, rng: &mut TlsWyRand, incoming: Vec3A, normal: Vec3A, front_facing: bool) -> glam::Vec3A
     {
         let direction: glam::Vec3A = incoming.normalize();
-        let cosine: f32 = -glam::Vec3A::dot(direction, normal);
-        let sine: f32 = (1.0 - cosine * cosine).sqrt();
 
         let eta: f32 = if front_facing { self.ior.recip() } else { self.ior };
-        let must_reflect: bool = eta * sine > 1.0;
+        let cosine: f32 = -glam::Vec3A::dot(direction, normal);
 
-        if must_reflect || rng.generate::<f32>() < Self::f(cosine, eta)
+        if rng.generate::<f32>() < Self::f(cosine, eta)
         {
             reflect(direction, normal)
         }
@@ -451,15 +455,21 @@ impl MaterialTrait for Dielectric
         }
     }
 
-    fn get_brdf_pdf(&self, _: Vec3A, outgoing: Vec3A, hi: &HitInfo) -> BsdfPdf
+    fn get_brdf_pdf(&self, incoming: Vec3A, outgoing: Vec3A, hi: &HitInfo) -> BsdfPdf
     {
+        let cosine: f32 = -glam::Vec3A::dot(incoming, outgoing);
+        let eta: f32 = if hi.front_facing { self.ior.recip() } else { self.ior };
+        let f: f32 = Self::f(cosine, eta);
+
         if glam::Vec3A::dot(outgoing, hi.normal) > 0.0
         {
-            BsdfPdf::new(glam::Vec3A::new(1.0, 1.0, 1.0), 1.0)
+            BsdfPdf::new(glam::Vec3A::splat(f), f)
         }
         else
         {
-            BsdfPdf::new(self.colour, 1.0)
+            //Account for solid-angle compression in refraction
+            let bsdf: f32 = (1.0 - f) / (eta * eta);
+            BsdfPdf::new(glam::Vec3A::splat(bsdf), 1.0 - f)
         }
     }
 
