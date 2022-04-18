@@ -4,7 +4,7 @@ use nanorand::tls::TlsWyRand;
 use nanorand::Rng;
 use nohash_hasher::IntSet;
 
-use crate::{BsdfPdf, HitInfo, Material, MaterialTrait, Ray, Scene, Triangle, ENABLE_NEE, EPSILON, INFINITY};
+use crate::{BsdfPdf, HitInfo, Material, MaterialTrait, Ray, Scene, Triangle, Volume, ENABLE_NEE, EPSILON, INFINITY};
 
 const MIN_PDF: f32 = 1e-8;
 
@@ -84,17 +84,50 @@ pub(crate) fn integrate(mut r: Ray, scene: &Scene, env: &ImageResult<DynamicImag
 
     let mut last_delta: bool = false;
 
-    let mut volume_stack: IntSet<&Material> = IntSet::default();
+    let mut volume_stack: IntSet<&Volume> = IntSet::default();
 
     for b in 0..=max_bounces
     {
+        //Russian roulette
+        if b > 3 || path_weight.max_element() < 1e-10
+        {
+            let survive_prob: f32 = path_weight.max_element().min(0.9999);
+            if rng.generate::<f32>() > survive_prob
+            {
+                break;
+            }
+            else
+            {
+                path_weight /= survive_prob;
+            }
+        }
+
         if let Some((hit_info, _, material)) = scene.world.intersect(&bump, &r, INFINITY)
         {
             let wi: glam::Vec3A = -r.direction;
 
-            for m in &volume_stack
+            let absorbing = volume_stack.iter().filter_map(|v| v.absorption.as_ref());
+            let scattering = volume_stack.iter().filter_map(|v| v.scatter.as_ref());
+
+            let (volume_scattered, dist) = if let Some((t, dir, _)) = scattering
+                .filter_map(|s| s.scatter(&mut rng, r.direction, hit_info.t))
+                .min_by(|a, b| a.0.total_cmp(&b.0))
             {
-                path_weight *= m.get_transmission(&r, hit_info.t);
+                r = Ray::new(r.at(t), dir);
+
+                (true, r.direction.length() * t)
+            }
+            else
+            {
+                (false, r.direction.length() * hit_info.t)
+            };
+
+            path_weight *= absorbing.fold(glam::Vec3A::ONE, |w, a| w * a.get_transmission(dist));
+
+            if volume_scattered
+            {
+                last_delta = true;
+                continue;
             }
 
             if material.is_emissive() && (!ENABLE_NEE || last_delta || b == 0)
@@ -104,15 +137,15 @@ pub(crate) fn integrate(mut r: Ray, scene: &Scene, env: &ImageResult<DynamicImag
             }
             else
             {
-                if material.is_absorbing()
+                if let Some(v) = material.get_volume()
                 {
                     if hit_info.front_facing
                     {
-                        volume_stack.insert(material);
+                        volume_stack.insert(v);
                     }
                     else
                     {
-                        volume_stack.remove(&material);
+                        volume_stack.remove(&v);
                     }
                 }
 
@@ -190,19 +223,6 @@ pub(crate) fn integrate(mut r: Ray, scene: &Scene, env: &ImageResult<DynamicImag
             }
 
             break;
-        }
-
-        if b > 3 || path_weight.max_element() < 1e-10
-        {
-            let survive_prob: f32 = path_weight.max_element().min(0.9999);
-            if rng.generate::<f32>() > survive_prob
-            {
-                break;
-            }
-            else
-            {
-                path_weight /= survive_prob;
-            }
         }
     }
 

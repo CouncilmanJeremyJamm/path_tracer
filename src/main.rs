@@ -13,6 +13,7 @@ use crate::ray::Ray;
 use crate::scene::Scene;
 use crate::tlas::TLAS;
 use crate::utility::{EPSILON, INFINITY};
+use crate::volume::Volume;
 
 #[global_allocator]
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
@@ -27,7 +28,7 @@ mod utility;
 const ASPECT_RATIO: f32 = 1.0;
 const IMAGE_WIDTH: usize = 1000;
 const IMAGE_HEIGHT: usize = ((IMAGE_WIDTH as f32) / ASPECT_RATIO) as usize;
-const SAMPLES_PER_PIXEL: u32 = 128;
+const SAMPLES_PER_PIXEL: u32 = 256;
 const MAX_BOUNCES: u32 = 1024;
 
 const ENABLE_NEE: bool = true;
@@ -78,14 +79,16 @@ fn main()
     //Materials
     println!("Creating materials...");
 
+    let volume = Volume::new(glam::Vec3A::new(0.4, 0.62, 0.7), 0.1, 1.0 / 200.0, 0.6);
+
     let diffuse_gray = Lambertian::new(glam::Vec3A::new(0.73, 0.73, 0.73));
     let diffuse_green = Lambertian::new(glam::Vec3A::new(0.12, 0.45, 0.15));
     let diffuse_red = Lambertian::new(glam::Vec3A::new(0.65, 0.05, 0.05));
     let diffuse_blue = Lambertian::new(glam::Vec3A::new(0.05, 0.05, 0.25));
     let ggx_blue = GGXMetal::new(glam::Vec3A::new(0.1, 0.1, 0.45), 0.4);
-    let brown_glass_ggx = GGXDielectric::new(glam::Vec3A::new(0.04, 0.062, 0.07), glam::Vec3A::splat(0.95), 1.5, 0.1);
-    let clear_glass_ggx = GGXDielectric::new(glam::Vec3A::ZERO, glam::Vec3A::ONE, 1.5, 0.0);
-    let glass = Dielectric::new(glam::Vec3A::splat(0.95), glam::Vec3A::new(0.04, 0.062, 0.07), 1.5);
+    let brown_glass_ggx = GGXDielectric::new(glam::Vec3A::splat(0.95), 1.5, 0.1, Some(volume));
+    let clear_glass_ggx = GGXDielectric::new(glam::Vec3A::ONE, 1.5, 0.0, Some(volume));
+    let glass = Dielectric::new(glam::Vec3A::ONE, 1.5, Some(volume));
     let mirror = Specular::new(glam::Vec3A::ONE);
 
     let light = Emissive::new(glam::Vec3A::splat(15.0));
@@ -103,7 +106,7 @@ fn main()
         // //Model::new("models/cornell/cb_box_short.obj", &diffuse_gray),
         // //Model::new("models/sphere_offset.obj", &glass),
         Model::new("models/zenobia.obj", &ggx_blue),
-        Model::new("models/cornell/dragon.obj", &glass),
+        Model::new("models/cornell/dragon.obj", &brown_glass_ggx),
         // Model::new("models/sphere.obj", &clear_glass_ggx),
     ];
 

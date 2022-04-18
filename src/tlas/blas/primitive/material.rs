@@ -1,5 +1,3 @@
-use std::hash::{Hash, Hasher};
-
 use enum_dispatch::enum_dispatch;
 use glam::{Mat3A, Vec3A};
 use nanorand::tls::TlsWyRand;
@@ -9,8 +7,10 @@ use crate::ray::Ray;
 use crate::tlas::blas::primitive::material::onb::{generate_onb, generate_onb_ggx};
 use crate::tlas::blas::primitive::model::HitInfo;
 use crate::utility::{random_cosine_vector, reflect, refract};
+use crate::Volume;
 
 mod onb;
+pub mod volume;
 
 pub struct BsdfPdf
 {
@@ -33,12 +33,11 @@ pub trait MaterialTrait: Sync + Send
     fn scatter_direction(&self, rng: &mut TlsWyRand, incoming: glam::Vec3A, normal: glam::Vec3A, front_facing: bool) -> glam::Vec3A;
     fn get_brdf_pdf(&self, incoming: glam::Vec3A, outgoing: glam::Vec3A, hi: &HitInfo) -> BsdfPdf;
     fn get_emitted(&self) -> glam::Vec3A { glam::Vec3A::ZERO }
-    fn get_transmission(&self, _: &Ray, _: f32) -> glam::Vec3A { glam::Vec3A::ZERO }
     fn volume_scatter(&self, r: Ray, _: f32) -> (bool, glam::Vec3A) { (false, r.direction) }
 
     fn is_delta(&self) -> bool { false }
     fn is_emissive(&self) -> bool { false }
-    fn is_absorbing(&self) -> bool { false }
+    fn get_volume(&self) -> Option<&Volume> { None }
 
     fn get_weakening(&self, wo: glam::Vec3A, n: glam::Vec3A) -> f32
     {
@@ -63,24 +62,6 @@ pub enum Material
     GGXDielectric,
     Dielectric,
 }
-
-impl Hash for &Material
-{
-    fn hash<H: Hasher>(&self, hasher: &mut H)
-    {
-        let ptr = (*self) as *const Material;
-        hasher.write_usize(ptr as usize);
-    }
-}
-
-impl nohash_hasher::IsEnabled for &Material {}
-
-impl PartialEq<Self> for &Material
-{
-    fn eq(&self, other: &Self) -> bool { std::ptr::eq(*self, *other) }
-}
-
-impl Eq for &Material {}
 
 pub struct Lambertian
 {
@@ -271,10 +252,11 @@ impl MaterialTrait for GGXMetal
 
 pub struct GGXDielectric
 {
-    absorption: glam::Vec3A,
     colour: glam::Vec3A,
     ior: f32,
     a: f32,
+
+    volume: Option<Volume>,
 }
 
 impl GGXDielectric
@@ -305,13 +287,13 @@ impl GGXDielectric
 
     fn g(&self, wi: glam::Vec3A, wo: glam::Vec3A, h: glam::Vec3A) -> f32 { self.g_separable(wi, h) * self.g_separable(wo, h) }
 
-    pub fn new(absorption: glam::Vec3A, colour: glam::Vec3A, ior: f32, roughness: f32) -> Material
+    pub fn new(colour: glam::Vec3A, ior: f32, roughness: f32, volume: Option<Volume>) -> Material
     {
         Self {
-            absorption,
             colour,
             ior,
             a: roughness.powi(2).clamp(0.0001, 0.9999),
+            volume,
         }
         .into()
     }
@@ -426,21 +408,21 @@ impl MaterialTrait for GGXDielectric
         }
     }
 
-    fn get_transmission(&self, ray: &Ray, t: f32) -> glam::Vec3A { glam::Vec3A::exp(-self.absorption * ray.direction.length() * t) }
-    fn is_absorbing(&self) -> bool { true }
+    fn get_volume(&self) -> Option<&Volume> { self.volume.as_ref() }
 }
 
 //TODO: fix fresnel in dielectric
 pub struct Dielectric
 {
     colour: glam::Vec3A,
-    absorption: glam::Vec3A,
     ior: f32,
+
+    volume: Option<Volume>,
 }
 
 impl Dielectric
 {
-    pub fn new(colour: glam::Vec3A, absorption: glam::Vec3A, ior: f32) -> Material { Self { colour, absorption, ior }.into() }
+    pub fn new(colour: glam::Vec3A, ior: f32, volume: Option<Volume>) -> Material { Self { colour, ior, volume }.into() }
 
     fn f(cosine: f32, eta: f32) -> f32
     {
@@ -489,11 +471,11 @@ impl MaterialTrait for Dielectric
         {
             //Account for solid-angle compression in refraction
             let bsdf: f32 = (1.0 - f) / (eta * eta);
-            BsdfPdf::new(glam::Vec3A::splat(bsdf), 1.0 - f)
+            BsdfPdf::new(self.colour * bsdf, 1.0 - f)
         }
     }
 
-    fn get_transmission(&self, ray: &Ray, t: f32) -> glam::Vec3A { glam::Vec3A::exp(-self.absorption * ray.direction.length() * t) }
+    fn get_volume(&self) -> Option<&Volume> { self.volume.as_ref() }
+
     fn is_delta(&self) -> bool { true }
-    fn is_absorbing(&self) -> bool { true }
 }
