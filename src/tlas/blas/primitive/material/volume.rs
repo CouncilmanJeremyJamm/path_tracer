@@ -1,12 +1,12 @@
 use std::hash::{Hash, Hasher};
 
-use glam::{Mat3A, Vec3A};
 use nanorand::tls::TlsWyRand;
 use nanorand::Rng;
 
 use crate::tlas::blas::primitive::material::onb::generate_onb;
 
 #[derive(Copy, Clone)]
+/// Implementation of Henyey-Greenstein phase function.
 pub struct VolumeScatter
 {
     c: f32,
@@ -15,6 +15,11 @@ pub struct VolumeScatter
 
 impl VolumeScatter
 {
+    /// # Parameters
+    /// * `c` - Scattering probability per unit length.
+    /// `1.0 / c` represents the average distance before scattering
+    /// * `g` - Average cosine of scattered direction.
+    /// `g == 0.0` corresponds to isotropic scattering
     fn new(c: f32, g: f32) -> Self
     {
         Self {
@@ -22,15 +27,19 @@ impl VolumeScatter
             g: g.clamp(-0.999, 0.999),
         }
     }
-    fn scatter_direction(&self, rng: &mut TlsWyRand, incoming: Vec3A) -> Vec3A
+
+    /// Samples the scattering direction from the Henyey-Greenstein phase function
+    fn scatter_direction(&self, rng: &mut TlsWyRand, incoming: glam::Vec3A) -> glam::Vec3A
     {
         let u0: f32 = rng.generate::<f32>();
         let u1: f32 = rng.generate::<f32>();
 
         let phi: f32 = 2.0 * std::f32::consts::PI * u0;
 
+        // Generate scatter direction in tangent space
         let z: f32 = if self.g == 0.0
         {
+            // Special case: isotropic scattering when g == 0.0
             1.0 - 2.0 * u1
         }
         else
@@ -45,11 +54,13 @@ impl VolumeScatter
         let x: f32 = r * cosine;
         let y: f32 = r * sine;
 
-        let onb: Mat3A = generate_onb(-incoming.normalize());
+        // Return scatter direction in world space
+        let onb: glam::Mat3A = generate_onb(-incoming.normalize());
         onb * glam::Vec3A::new(x, y, z)
     }
 
-    fn scatter_pdf(&self, incoming: Vec3A, outgoing: Vec3A) -> f32
+    /// Returns the probability of generating the outgoing direction given the incoming direction
+    fn scatter_pdf(&self, incoming: glam::Vec3A, outgoing: glam::Vec3A) -> f32
     {
         let wi: glam::Vec3A = outgoing.normalize();
         let wo: glam::Vec3A = incoming.normalize();
@@ -62,10 +73,17 @@ impl VolumeScatter
         n / d
     }
 
-    pub fn scatter(&self, rng: &mut TlsWyRand, incoming: glam::Vec3A, max_t: f32) -> Option<(f32, glam::Vec3A, f32)>
+    /// Checks for a potential scattering event
+    /// # Returns
+    /// * `None` - ray had no scattering interaction within `t_max`
+    /// * `Some(t, d, p)` - ray was scattered
+    ///     * `t` - distance to scattering interaction
+    ///     * `d` - scattered direction
+    ///     * `p` - probability of scattered direction
+    pub fn scatter(&self, rng: &mut TlsWyRand, incoming: glam::Vec3A, t_max: f32) -> Option<(f32, glam::Vec3A, f32)>
     {
         let t: f32 = -rng.generate::<f32>().ln() / self.c;
-        if t > max_t
+        if t > t_max
         {
             None
         }
@@ -80,6 +98,7 @@ impl VolumeScatter
 }
 
 #[derive(Copy, Clone)]
+/// Accounts for absorption due to Beer-Lambert law
 pub struct VolumeAbsorption
 {
     absorption: glam::Vec3A,
@@ -87,11 +106,16 @@ pub struct VolumeAbsorption
 
 impl VolumeAbsorption
 {
+    /// # Parameters
+    /// * `absorption` - RGB absorption of light
+    /// * `k` - extinction coefficient, controlling the strength of absorption
     pub fn new(absorption: glam::Vec3A, k: f32) -> Self { Self { absorption: absorption * k } }
     pub fn get_transmission(&self, dist: f32) -> glam::Vec3A { glam::Vec3A::exp(-self.absorption * dist) }
 }
 
 #[derive(Copy, Clone)]
+/// Representation of the scattering/absorption properties of a volume.
+/// Both absorption and scattering are optional
 pub struct Volume
 {
     pub absorption: Option<VolumeAbsorption>,
@@ -100,6 +124,15 @@ pub struct Volume
 
 impl Volume
 {
+    /// # Parameters
+    /// ## Absorption
+    /// * `absorption` - RGB absorption of light
+    /// * `k` - extinction coefficient, controlling the strength of absorption
+    /// ## Scattering
+    /// * `c` - Scattering probability per unit length.
+    /// `1.0 / c` represents the average distance before scattering
+    /// * `g` - Average cosine of scattered direction.
+    /// `g == 0.0` corresponds to isotropic scattering
     pub fn new(absorption: glam::Vec3A, k: f32, c: f32, g: f32) -> Self
     {
         let a = if k == 0.0 { None } else { Some(VolumeAbsorption::new(absorption, k)) };
@@ -109,11 +142,12 @@ impl Volume
     }
 }
 
+// Required trait implementations for construction of a HashSet
 impl Hash for &Volume
 {
     fn hash<H: Hasher>(&self, hasher: &mut H)
     {
-        let ptr = (*self) as *const Volume;
+        let ptr: *const Volume = (*self) as *const Volume;
         hasher.write_usize(ptr as usize);
     }
 }
