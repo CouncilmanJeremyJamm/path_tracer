@@ -86,9 +86,9 @@ fn main()
     let diffuse_red = Lambertian::new(glam::Vec3A::new(0.65, 0.05, 0.05));
     let diffuse_blue = Lambertian::new(glam::Vec3A::new(0.05, 0.05, 0.25));
     let ggx_blue = GGX::new_metal(glam::Vec3A::new(0.1, 0.1, 0.45), 0.4);
-    let brown_glass_ggx = GGX::new_dielectric(glam::Vec3A::new(0.04, 0.062, 0.07), 1.5, volume, glam::Vec3A::splat(0.95), 0.1);
-    let clear_glass_ggx = GGX::new_dielectric(glam::Vec3A::ONE, 1.5, volume, 0.0);
-    let glass = Dielectric::new(glam::Vec3A::splat(0.95), 1.5, volume);
+    let brown_glass_ggx = GGX::new_dielectric(glam::Vec3A::splat(0.95), 0.1, 1.5, Some(volume));
+    let clear_glass_ggx = GGX::new_dielectric(glam::Vec3A::ONE, 0.0, 1.5, Some(volume));
+    let glass = Dielectric::new(glam::Vec3A::splat(0.95), 1.5, Some(volume));
     let mirror = Specular::new(glam::Vec3A::ONE);
 
     let light = Emissive::new(glam::Vec3A::splat(15.0));

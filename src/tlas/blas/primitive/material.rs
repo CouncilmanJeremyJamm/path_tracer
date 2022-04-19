@@ -149,7 +149,7 @@ enum GGXModel
     REFLECTIVE,
     TRANSMISSIVE
     {
-        volume: Volume,
+        volume: Option<Volume>,
         ior: f32,
     },
 }
@@ -269,7 +269,7 @@ impl GGX
     /// * `roughness` - linear surface roughness
     /// * `absorption` - absorption due to Beer-Lambert law
     /// * `ior` - index of refraction
-    pub fn new_dielectric(colour: glam::Vec3A, roughness: f32, ior: f32, volume: Volume) -> Material
+    pub fn new_dielectric(colour: glam::Vec3A, roughness: f32, ior: f32, volume: Option<Volume>) -> Material
     {
         Self {
             colour,
@@ -421,7 +421,7 @@ impl MaterialTrait for GGX
 
     fn get_volume(&self) -> Option<&Volume>
     {
-        match self.ggx_model
+        match &self.ggx_model
         {
             GGXModel::REFLECTIVE => None,
             GGXModel::TRANSMISSIVE { volume, .. } => volume.as_ref(),
