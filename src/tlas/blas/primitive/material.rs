@@ -1,5 +1,4 @@
 use enum_dispatch::enum_dispatch;
-use glam::{Mat3A, Vec3A};
 use nanorand::tls::TlsWyRand;
 use nanorand::Rng;
 
@@ -58,8 +57,7 @@ pub enum Material
     Lambertian,
     Emissive,
     Specular,
-    GGXMetal,
-    GGXDielectric,
+    GGX,
     Dielectric,
 }
 
@@ -122,17 +120,44 @@ impl Specular
 
 impl MaterialTrait for Specular
 {
-    fn scatter_direction(&self, _: &mut TlsWyRand, incoming: Vec3A, normal: Vec3A, _: bool) -> Vec3A { reflect(incoming.normalize(), normal) }
+    fn scatter_direction(&self, _: &mut TlsWyRand, incoming: glam::Vec3A, normal: glam::Vec3A, _: bool) -> glam::Vec3A
+    {
+        reflect(incoming.normalize(), normal)
+    }
 
-    fn get_brdf_pdf(&self, _: Vec3A, _: Vec3A, _: &HitInfo) -> BsdfPdf { BsdfPdf::new(self.colour, 1.0) }
+    fn get_brdf_pdf(&self, _: glam::Vec3A, _: glam::Vec3A, _: &HitInfo) -> BsdfPdf { BsdfPdf::new(self.colour, 1.0) }
 
     fn is_delta(&self) -> bool { true }
 }
 
-struct GGX {}
+/// Implementation of GGX model based on *Microfacet Models for Refraction through Rough Surfaces*
+pub struct GGX
+{
+    /// Surface colour
+    colour: glam::Vec3A,
+    /// Surface roughness, remapped from linear roughness
+    a: f32,
+    /// Indicates which model is used, dictating which scatter directions are valid
+    ggx_model: GGXModel,
+}
+
+/// The `GGXModel` enum allows the `GGX` struct to implement two separate models:
+/// * `REFLECTIVE` - metals. Only reflection is enabled
+/// * `TRANSMISSIVE` - dielectrics. Both reflection and refraction is enabled
+enum GGXModel
+{
+    REFLECTIVE,
+    TRANSMISSIVE
+    {
+        volume: Volume,
+        ior: f32,
+    },
+}
+
 impl GGX
 {
-    fn d(h: glam::Vec3A, a: f32) -> f32
+    /// Normal distribution function
+    fn d(&self, h: glam::Vec3A) -> f32
     {
         if h.z <= 0.0
         {
@@ -142,16 +167,58 @@ impl GGX
         let cosine_sq: f32 = h.z * h.z;
         let tan_sq: f32 = (1.0 - cosine_sq).sqrt() / cosine_sq;
 
-        let x: f32 = (a * a) + tan_sq;
-        a * a / (std::f32::consts::PI * cosine_sq * cosine_sq * x * x)
+        let x: f32 = (self.a * self.a) + tan_sq;
+        self.a * self.a / (std::f32::consts::PI * cosine_sq * cosine_sq * x * x)
     }
 
-    fn generate_half_vector(rng: &mut TlsWyRand, incoming: glam::Vec3A, normal: glam::Vec3A, a: f32) -> glam::Vec3A
+    /// Schlick's approximation to the fresnel term
+    fn f(&self, v_dot_h: f32, f0: f32) -> f32 { f0 + ((1.0 - f0) * (1.0 - v_dot_h).powi(5)) }
+    /// Schlick's approximation to the fresnel term, used to tint the reflection for the `REFLECTIVE` model
+    fn f_vector(&self, v_dot_h: f32, f0: glam::Vec3A) -> glam::Vec3A { f0 + ((1.0 - f0) * (1.0 - v_dot_h).powi(5)) }
+
+    /// Mono-directional/masking shadowing function
+    fn g1(&self, v: glam::Vec3A, h: glam::Vec3A) -> f32
     {
+        if v.z * glam::Vec3A::dot(h, v) <= 0.0
+        {
+            return 0.0;
+        }
+
+        let n_dot_v_sq: f32 = v.z * v.z;
+        let tan_squared: f32 = (1.0 - n_dot_v_sq) / n_dot_v_sq;
+        2.0 / (1.0 + (1.0 + self.a * self.a * tan_squared).sqrt())
+    }
+
+    /// Bi-directional/masking-shadowing shadowing function
+    fn g(&self, wi: glam::Vec3A, wo: glam::Vec3A, h: glam::Vec3A) -> f32 { self.g1(wi, h) * self.g1(wo, h) }
+
+    /// Uncorrelated `G` term based on *Moving Frostbite to Physically Based Rendering*
+    fn g_uncorrelated(&self, wi: glam::Vec3A, wo: glam::Vec3A) -> f32
+    {
+        if wi.z <= 0.0 || wo.z <= 0.0
+        {
+            return 0.0;
+        }
+
+        let a_squared: f32 = self.a * self.a;
+
+        let x: f32 = 2.0 * wi.z * wo.z;
+        let y: f32 = 1.0 - a_squared;
+        let z: f32 = wo.z * (a_squared + (y * wi.z * wi.z)).sqrt();
+        let w: f32 = wi.z * (a_squared + (y * wo.z * wo.z)).sqrt();
+
+        x / (z + w)
+    }
+
+    /// Samples the half-vector using the method outlined in
+    /// *A Simpler and Exact Sampling Routine for the GGX Distribution of Visible Normals*
+    fn generate_half_vector(&self, rng: &mut TlsWyRand, incoming: glam::Vec3A, normal: glam::Vec3A) -> glam::Vec3A
+    {
+        // Transform into tangent space before using the sampling method
         let onb_a: glam::Mat3A = generate_onb(normal);
 
         let _v: glam::Vec3A = onb_a.transpose() * -incoming;
-        let v: glam::Vec3A = (_v * glam::Vec3A::new(a, a, 1.0)).normalize();
+        let v: glam::Vec3A = (_v * glam::Vec3A::new(self.a, self.a, 1.0)).normalize();
 
         //Can't use generate_onb() for this, use implementation from the paper instead
         let onb_b: glam::Mat3A = generate_onb_ggx(v);
@@ -171,209 +238,168 @@ impl GGX
         {
             std::f32::consts::PI + ((u2 - _a) / (1.0 - _a)) * std::f32::consts::PI
         };
+
         let (sin, cos): (f32, f32) = phi.sin_cos();
         let p1: f32 = r * cos;
         let p2: f32 = r * sin * if condition { 1.0 } else { v.z };
 
         let _h: glam::Vec3A = onb_b * glam::Vec3A::new(p1, p2, (1.0 - p1 * p1 - p2 * p2).sqrt());
 
-        onb_a * (_h * glam::Vec3A::new(a, a, 1.0)).normalize()
+        // Un-stretch the half-vector and transform back to world space
+        onb_a * (_h * glam::Vec3A::new(self.a, self.a, 1.0)).normalize()
     }
-}
 
-pub struct GGXMetal
-{
-    colour: glam::Vec3A,
-    a: f32,
-}
-
-impl GGXMetal
-{
-    fn f(&self, v_dot_h: f32) -> glam::Vec3A { self.colour + ((1.0 - self.colour) * (1.0 - v_dot_h).powi(5)) }
-
-    fn g(&self, wi: glam::Vec3A, wo: glam::Vec3A) -> f32
-    {
-        if wi.z <= 0.0 || wo.z <= 0.0
-        {
-            return 0.0;
-        }
-
-        let a_squared: f32 = self.a * self.a;
-
-        let x: f32 = 2.0 * wi.z * wo.z;
-        let y: f32 = 1.0 - a_squared;
-        let z: f32 = wo.z * (a_squared + (y * wi.z * wi.z)).sqrt();
-        let w: f32 = wi.z * (a_squared + (y * wo.z * wo.z)).sqrt();
-
-        x / (z + w)
-    }
-    pub fn new(colour: glam::Vec3A, roughness: f32) -> Material
+    /// Constructs a GGX material using the `REFLECTIVE` model
+    /// # Parameters
+    /// * `colour` - surface colour
+    /// * `roughness` - linear surface roughness
+    pub fn new_metal(colour: glam::Vec3A, roughness: f32) -> Material
     {
         Self {
             colour,
-            a: roughness.powi(2).clamp(0.0001, 1.0),
-        }
-        .into()
-    }
-}
-
-impl MaterialTrait for GGXMetal
-{
-    fn scatter_direction(&self, rng: &mut TlsWyRand, incoming: glam::Vec3A, normal: glam::Vec3A, _front_facing: bool) -> glam::Vec3A
-    {
-        let direction: glam::Vec3A = incoming.normalize();
-        let h: glam::Vec3A = GGX::generate_half_vector(rng, direction, normal, self.a);
-
-        reflect(direction, h)
-    }
-
-    fn get_brdf_pdf(&self, incoming: glam::Vec3A, outgoing: glam::Vec3A, hi: &HitInfo) -> BsdfPdf
-    {
-        let onb_inv: Mat3A = generate_onb(hi.normal).transpose();
-
-        //Outgoing = direction of light ray = -direction of tracing ray
-        //Incoming = direction of scattering
-        let wi: glam::Vec3A = onb_inv * outgoing.normalize();
-        let wo: glam::Vec3A = onb_inv * incoming.normalize();
-
-        let h: glam::Vec3A = (wi + wo).normalize();
-        let d: f32 = GGX::d(h, self.a);
-        let i_dot_h: f32 = glam::Vec3A::dot(wi, h);
-
-        let num: glam::Vec3A = self.f(i_dot_h) * self.g(wi, wo) * d;
-        let denom: f32 = 4.0 * wi.z * wo.z;
-
-        let brdf: glam::Vec3A = num / denom;
-        let pdf: f32 = d * h.z / (4.0 * glam::Vec3A::dot(wo, h));
-
-        BsdfPdf::new(brdf, pdf)
-    }
-}
-
-pub struct GGXDielectric
-{
-    colour: glam::Vec3A,
-    ior: f32,
-    a: f32,
-
-    volume: Option<Volume>,
-}
-
-impl GGXDielectric
-{
-    fn f(&self, v_dot_h: f32, f0: f32) -> f32
-    {
-        if v_dot_h.is_finite()
-        {
-            f0 + ((1.0 - f0) * (1.0 - v_dot_h).powi(5))
-        }
-        else
-        {
-            1.0
-        }
-    }
-
-    fn g_separable(&self, v: glam::Vec3A, h: glam::Vec3A) -> f32
-    {
-        if v.z * glam::Vec3A::dot(h, v) <= 0.0
-        {
-            return 0.0;
-        }
-
-        let n_dot_v_sq: f32 = v.z * v.z;
-        let tan_squared: f32 = (1.0 - n_dot_v_sq) / n_dot_v_sq;
-        2.0 / (1.0 + (1.0 + self.a * self.a * tan_squared).sqrt())
-    }
-
-    fn g(&self, wi: glam::Vec3A, wo: glam::Vec3A, h: glam::Vec3A) -> f32 { self.g_separable(wi, h) * self.g_separable(wo, h) }
-
-    pub fn new(colour: glam::Vec3A, ior: f32, roughness: f32, volume: Option<Volume>) -> Material
-    {
-        Self {
-            colour,
-            ior,
             a: roughness.powi(2).clamp(0.0001, 0.9999),
-            volume,
+            ggx_model: GGXModel::REFLECTIVE,
+        }
+        .into()
+    }
+
+    /// Constructs a GGX material using the `REFRACTIVE` model
+    /// # Parameters
+    /// * `colour` - surface colour
+    /// * `roughness` - linear surface roughness
+    /// * `absorption` - absorption due to Beer-Lambert law
+    /// * `ior` - index of refraction
+    pub fn new_dielectric(colour: glam::Vec3A, roughness: f32, ior: f32, volume: Volume) -> Material
+    {
+        Self {
+            colour,
+            a: roughness.powi(2).clamp(0.0001, 0.9999),
+            ggx_model: GGXModel::TRANSMISSIVE { ior, volume },
         }
         .into()
     }
 }
 
-impl MaterialTrait for GGXDielectric
+impl MaterialTrait for GGX
 {
-    fn scatter_direction(&self, rng: &mut TlsWyRand, incoming: Vec3A, normal: Vec3A, front_facing: bool) -> glam::Vec3A
+    fn scatter_direction(&self, rng: &mut TlsWyRand, incoming: glam::Vec3A, normal: glam::Vec3A, front_facing: bool) -> glam::Vec3A
     {
         let direction: glam::Vec3A = incoming.normalize();
 
         //Generate half-vector from the GGX distribution
-        let h: glam::Vec3A = GGX::generate_half_vector(rng, direction, normal, self.a);
-
-        if -glam::Vec3A::dot(h, direction) < 1e-10
-        {
-            return glam::Vec3A::NAN;
-        }
+        let h: glam::Vec3A = self.generate_half_vector(rng, direction, normal);
 
         //Reflect or refract using the half-vector as the normal
-        let eta: f32 = if front_facing { self.ior.recip() } else { self.ior };
-        let f0: f32 = ((eta - 1.0) / (eta + 1.0)).powi(2);
-
-        let refracted: glam::Vec3A = refract(direction, h, eta);
-
-        //TODO: Fresnel term uses the refracted direction
-        //Source: https://agraphicsguynotes.com/posts/glass_material_simulated_by_microfacet_bxdf/
-        let f: f32 = self.f(-glam::Vec3A::dot(direction, h), f0);
-
-        //println!("{f}");
-
-        //If refract() returns NaN, this indicates total internal reflection
-        let ray_reflected: bool = refracted.is_nan() || rng.generate::<f32>() < f;
-        if ray_reflected
+        match self.ggx_model
         {
-            reflect(direction, h)
-        }
-        else
-        {
-            refracted
+            GGXModel::REFLECTIVE => reflect(direction, h),
+            GGXModel::TRANSMISSIVE { ior, .. } =>
+            {
+                let eta: f32 = if front_facing { ior.recip() } else { ior };
+                let f0: f32 = ((eta - 1.0) / (eta + 1.0)).powi(2);
+
+                let f: f32 = self.f(-glam::Vec3A::dot(direction, h), f0);
+
+                //If refract() returns NaN, this indicates total internal reflection
+                let refracted: glam::Vec3A = refract(direction, h, eta);
+                let ray_reflected: bool = refracted.is_nan() || rng.generate::<f32>() < f;
+
+                if ray_reflected
+                {
+                    reflect(direction, h)
+                }
+                else
+                {
+                    refracted
+                }
+            }
         }
     }
 
-    fn get_brdf_pdf(&self, incoming: Vec3A, outgoing: Vec3A, hi: &HitInfo) -> BsdfPdf
+    fn get_brdf_pdf(&self, incoming: glam::Vec3A, outgoing: glam::Vec3A, hi: &HitInfo) -> BsdfPdf
     {
-        let onb_inv: Mat3A = generate_onb(hi.normal).transpose();
+        //Transform to tangent space
+        let onb_inv: glam::Mat3A = generate_onb(hi.normal).transpose();
 
         //Outgoing = direction of light ray = -direction of tracing ray
         //Incoming = direction of scattering
         let wi: glam::Vec3A = onb_inv * outgoing.normalize();
         let wo: glam::Vec3A = onb_inv * incoming.normalize();
 
-        let eta: f32 = if hi.front_facing { self.ior } else { self.ior.recip() };
-        let f0: f32 = ((eta - 1.0) / (eta + 1.0)).powi(2);
+        let ray_transmitted: bool = wi.z < 0.0;
 
-        let reflected: bool = wo.z * wi.z > 0.0;
-        let _h: glam::Vec3A = if reflected
+        let h: glam::Vec3A = match self.ggx_model
         {
-            glam::Vec3A::normalize(wi + wo)
-        }
-        else
-        {
-            (eta * wi + wo).normalize()
+            GGXModel::REFLECTIVE => glam::Vec3A::normalize(wi + wo),
+            GGXModel::TRANSMISSIVE { ior, .. } =>
+            {
+                if ray_transmitted
+                {
+                    let eta: f32 = if hi.front_facing { ior } else { ior.recip() };
+                    let _h: glam::Vec3A = (eta * wi + wo).normalize();
+                    _h * _h.z.signum()
+                }
+                else
+                {
+                    glam::Vec3A::normalize(wi + wo)
+                }
+            }
         };
-
-        let h: glam::Vec3A = _h * _h.z.signum();
 
         let i_dot_h: f32 = glam::Vec3A::dot(wi, h);
         let o_dot_h: f32 = glam::Vec3A::dot(wo, h);
 
-        //let tir: bool = (1.0 - o_dot_h * o_dot_h) / (eta * eta) >= 1.0;
+        let d: f32 = self.d(h);
 
-        let d: f32 = GGX::d(h, self.a);
-        //TODO: Schlick's approximation uses the refracted direction
-        //let f: f32 = if tir { 1.0 } else { self.f(i_dot_h.abs(), f0) };
-        let f: f32 = self.f(i_dot_h.abs(), f0);
-        let g: f32 = self.g(wi, wo, h);
-
-        if reflected
+        let (f, g): (f32, f32) = match self.ggx_model
         {
+            //The reflective model must reflect, and f == 1.0
+            GGXModel::REFLECTIVE => (1.0, self.g_uncorrelated(wi, wo)),
+            GGXModel::TRANSMISSIVE { ior, .. } =>
+            {
+                let eta: f32 = if hi.front_facing { ior } else { ior.recip() };
+
+                let f0: f32 = ((eta - 1.0) / (eta + 1.0)).powi(2);
+                let _f = self.f(i_dot_h.abs(), f0);
+                let _g = self.g(wi, wo, h);
+
+                (_f, _g)
+            }
+        };
+
+        if ray_transmitted
+        {
+            match self.ggx_model
+            {
+                //Return early for illegal ray directions
+                GGXModel::REFLECTIVE => BsdfPdf::new(glam::Vec3A::ZERO, 0.0),
+                GGXModel::TRANSMISSIVE { ior, .. } =>
+                {
+                    //Calculate transmission BSDF
+                    let eta: f32 = if hi.front_facing { ior } else { ior.recip() };
+
+                    let x: f32 = (i_dot_h * o_dot_h).abs();
+                    let y: f32 = (wi.z * wo.z).abs();
+
+                    let z: f32 = (1.0 - f) * g * d;
+                    let w: f32 = (eta * i_dot_h) + o_dot_h;
+
+                    let btdf: f32 = (x * z) / (y * w * w);
+
+                    //Calculate PDF
+                    let ja: f32 = o_dot_h.abs();
+                    let jb: f32 = w;
+                    let jacobian: f32 = ja / (jb * jb);
+                    let pdf: f32 = d * (1.0 - f) * h.z.abs() * jacobian;
+
+                    //Transmission is affected by surface colour
+                    BsdfPdf::new(self.colour * btdf * eta * eta, pdf)
+                }
+            }
+        }
+        else
+        {
+            //Both metal and dielectric share a similar BRDF/pdf for reflection
             //Calculate reflection BRDF
             let brdf: f32 = f * g * d / (4.0 * (wi.z * wo.z).abs());
 
@@ -381,34 +407,26 @@ impl MaterialTrait for GGXDielectric
             let jacobian: f32 = 1.0 / (4.0 * o_dot_h.abs());
             let pdf: f32 = d * h.z * f * jacobian;
 
-            //Reflections are not affected by material colour
-            BsdfPdf::new(glam::Vec3A::splat(brdf), pdf)
-        }
-        else
-        {
-            //Calculate transmission BSDF
-            let x: f32 = (i_dot_h * o_dot_h).abs();
-            let y: f32 = (wi.z * wo.z).abs();
+            //Reflections in the reflective model must be tinted for colour to appear
+            //Reflections in the transmissive model are not tinted
+            let reflection_tint: glam::Vec3A = match self.ggx_model
+            {
+                GGXModel::REFLECTIVE => self.f_vector(i_dot_h.abs(), self.colour),
+                GGXModel::TRANSMISSIVE { .. } => glam::Vec3A::ONE,
+            };
 
-            let z: f32 = (1.0 - f) * g * d;
-            let w: f32 = (eta * i_dot_h) + o_dot_h;
-
-            let btdf: f32 = (x * z) / (y * w * w);
-
-            //Calculate PDF
-            let ja: f32 = o_dot_h.abs();
-            let jb: f32 = w;
-            let jacobian: f32 = ja / (jb * jb);
-            let pdf: f32 = d * (1.0 - f) * h.z.abs() * jacobian;
-
-            //println!("{pdf}");
-
-            //Transmission is affected by material colour
-            BsdfPdf::new(self.colour * btdf * eta * eta, pdf)
+            BsdfPdf::new(brdf * reflection_tint, pdf)
         }
     }
 
-    fn get_volume(&self) -> Option<&Volume> { self.volume.as_ref() }
+    fn get_volume(&self) -> Option<&Volume>
+    {
+        match self.ggx_model
+        {
+            GGXModel::REFLECTIVE => None,
+            GGXModel::TRANSMISSIVE { volume, .. } => volume.as_ref(),
+        }
+    }
 }
 
 //TODO: fix fresnel in dielectric
@@ -440,7 +458,7 @@ impl Dielectric
 
 impl MaterialTrait for Dielectric
 {
-    fn scatter_direction(&self, rng: &mut TlsWyRand, incoming: Vec3A, normal: Vec3A, front_facing: bool) -> glam::Vec3A
+    fn scatter_direction(&self, rng: &mut TlsWyRand, incoming: glam::Vec3A, normal: glam::Vec3A, front_facing: bool) -> glam::Vec3A
     {
         let direction: glam::Vec3A = incoming.normalize();
 
@@ -457,7 +475,7 @@ impl MaterialTrait for Dielectric
         }
     }
 
-    fn get_brdf_pdf(&self, incoming: Vec3A, outgoing: Vec3A, hi: &HitInfo) -> BsdfPdf
+    fn get_brdf_pdf(&self, incoming: glam::Vec3A, outgoing: glam::Vec3A, hi: &HitInfo) -> BsdfPdf
     {
         let cosine: f32 = -glam::Vec3A::dot(incoming, outgoing);
         let eta: f32 = if hi.front_facing { self.ior.recip() } else { self.ior };
