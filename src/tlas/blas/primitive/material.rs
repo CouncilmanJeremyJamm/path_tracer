@@ -1,7 +1,6 @@
 use std::hash::{Hash, Hasher};
 
 use enum_dispatch::enum_dispatch;
-use glam::{Mat3A, Vec3A};
 use nanorand::tls::TlsWyRand;
 use nanorand::Rng;
 
@@ -141,9 +140,12 @@ impl Specular
 
 impl MaterialTrait for Specular
 {
-    fn scatter_direction(&self, _: &mut TlsWyRand, incoming: Vec3A, normal: Vec3A, _: bool) -> Vec3A { reflect(incoming.normalize(), normal) }
+    fn scatter_direction(&self, _: &mut TlsWyRand, incoming: glam::Vec3A, normal: glam::Vec3A, _: bool) -> glam::Vec3A
+    {
+        reflect(incoming.normalize(), normal)
+    }
 
-    fn get_brdf_pdf(&self, _: Vec3A, _: Vec3A, _: &HitInfo) -> BsdfPdf { BsdfPdf::new(self.colour, 1.0) }
+    fn get_brdf_pdf(&self, _: glam::Vec3A, _: glam::Vec3A, _: &HitInfo) -> BsdfPdf { BsdfPdf::new(self.colour, 1.0) }
 
     fn is_delta(&self) -> bool { true }
 }
@@ -248,7 +250,7 @@ impl MaterialTrait for GGXMetal
 
     fn get_brdf_pdf(&self, incoming: glam::Vec3A, outgoing: glam::Vec3A, hi: &HitInfo) -> BsdfPdf
     {
-        let onb_inv: Mat3A = generate_onb(hi.normal).transpose();
+        let onb_inv: glam::Mat3A = generate_onb(hi.normal).transpose();
 
         //Outgoing = direction of light ray = -direction of tracing ray
         //Incoming = direction of scattering
@@ -319,7 +321,7 @@ impl GGXDielectric
 
 impl MaterialTrait for GGXDielectric
 {
-    fn scatter_direction(&self, rng: &mut TlsWyRand, incoming: Vec3A, normal: Vec3A, front_facing: bool) -> glam::Vec3A
+    fn scatter_direction(&self, rng: &mut TlsWyRand, incoming: glam::Vec3A, normal: glam::Vec3A, front_facing: bool) -> glam::Vec3A
     {
         let direction: glam::Vec3A = incoming.normalize();
 
@@ -355,9 +357,9 @@ impl MaterialTrait for GGXDielectric
         }
     }
 
-    fn get_brdf_pdf(&self, incoming: Vec3A, outgoing: Vec3A, hi: &HitInfo) -> BsdfPdf
+    fn get_brdf_pdf(&self, incoming: glam::Vec3A, outgoing: glam::Vec3A, hi: &HitInfo) -> BsdfPdf
     {
-        let onb_inv: Mat3A = generate_onb(hi.normal).transpose();
+        let onb_inv: glam::Mat3A = generate_onb(hi.normal).transpose();
 
         //Outgoing = direction of light ray = -direction of tracing ray
         //Incoming = direction of scattering
@@ -458,7 +460,7 @@ impl Dielectric
 
 impl MaterialTrait for Dielectric
 {
-    fn scatter_direction(&self, rng: &mut TlsWyRand, incoming: Vec3A, normal: Vec3A, front_facing: bool) -> glam::Vec3A
+    fn scatter_direction(&self, rng: &mut TlsWyRand, incoming: glam::Vec3A, normal: glam::Vec3A, front_facing: bool) -> glam::Vec3A
     {
         let direction: glam::Vec3A = incoming.normalize();
 
@@ -475,7 +477,7 @@ impl MaterialTrait for Dielectric
         }
     }
 
-    fn get_brdf_pdf(&self, incoming: Vec3A, outgoing: Vec3A, hi: &HitInfo) -> BsdfPdf
+    fn get_brdf_pdf(&self, incoming: glam::Vec3A, outgoing: glam::Vec3A, hi: &HitInfo) -> BsdfPdf
     {
         let cosine: f32 = -glam::Vec3A::dot(incoming, outgoing);
         let eta: f32 = if hi.front_facing { self.ior.recip() } else { self.ior };
@@ -489,7 +491,7 @@ impl MaterialTrait for Dielectric
         {
             //Account for solid-angle compression in refraction
             let bsdf: f32 = (1.0 - f) / (eta * eta);
-            BsdfPdf::new(glam::Vec3A::splat(bsdf), 1.0 - f)
+            BsdfPdf::new(self.colour * bsdf, 1.0 - f)
         }
     }
 
