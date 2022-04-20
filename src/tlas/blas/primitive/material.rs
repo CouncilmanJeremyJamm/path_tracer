@@ -11,6 +11,7 @@ use crate::Volume;
 mod onb;
 pub mod volume;
 
+/// Return type for `MaterialTrait::get_bsdf_pdf()`
 pub struct BsdfPdf
 {
     pub bsdf: glam::Vec3A,
@@ -19,25 +20,47 @@ pub struct BsdfPdf
 
 impl BsdfPdf
 {
-    pub fn new(bsdf: glam::Vec3A, pdf: f32) -> Self
+    pub fn new(bsdf: glam::Vec3A, pdf: f32) -> Self { Self { bsdf, pdf } }
+    pub fn new_delta(bsdf: glam::Vec3A) -> Self { Self { bsdf, pdf: 1.0 } }
+
+    pub fn invalid() -> Self
     {
-        //debug_assert!(pdf > 0.0); //Not always true
-        Self { bsdf, pdf }
+        Self {
+            bsdf: glam::Vec3A::ZERO,
+            pdf: 0.0,
+        }
     }
 }
 
 #[enum_dispatch]
+/// Common interface for all material types.
+///
+/// Implements `Sync + Send` to allow multithreading
 pub trait MaterialTrait: Sync + Send
 {
+    /// Generates an outgoing direction
     fn scatter_direction(&self, rng: &mut TlsWyRand, incoming: glam::Vec3A, normal: glam::Vec3A, front_facing: bool) -> glam::Vec3A;
-    fn get_brdf_pdf(&self, incoming: glam::Vec3A, outgoing: glam::Vec3A, hi: &HitInfo) -> BsdfPdf;
-    fn get_emitted(&self) -> glam::Vec3A { glam::Vec3A::ZERO }
-    fn volume_scatter(&self, r: Ray, _: f32) -> (bool, glam::Vec3A) { (false, r.direction) }
 
+    /// For given incoming and outgoing directions, calculate both the BSDF and the pdf
+    fn get_bsdf_pdf(&self, incoming: glam::Vec3A, outgoing: glam::Vec3A, hi: &HitInfo) -> BsdfPdf;
+
+    /// Returns the light emitted by the current material. Only non-zero for the `Emissive` material
+    fn get_emitted(&self) -> glam::Vec3A { glam::Vec3A::ZERO }
+
+    /// Returns `true` if the current material has a delta distribution
     fn is_delta(&self) -> bool { false }
+
+    /// Returns `true` if the current material type is `Emissive`
     fn is_emissive(&self) -> bool { false }
+
+    /// Returns `None` for non-transmissive materials.
+    ///
+    /// May return `Some(&Volume)` if the current material is both transmissive and has volume attributes.
     fn get_volume(&self) -> Option<&Volume> { None }
 
+    /// Calculates the cosine term in the light transport equation.
+    ///
+    /// For delta distributions, this returns 1.0.
     fn get_weakening(&self, wo: glam::Vec3A, n: glam::Vec3A) -> f32
     {
         if self.is_delta()
@@ -78,7 +101,7 @@ impl MaterialTrait for Lambertian
         generate_onb(normal) * random_cosine_vector(rng)
     }
 
-    fn get_brdf_pdf(&self, _incoming: glam::Vec3A, outgoing: glam::Vec3A, hi: &HitInfo) -> BsdfPdf
+    fn get_bsdf_pdf(&self, _incoming: glam::Vec3A, outgoing: glam::Vec3A, hi: &HitInfo) -> BsdfPdf
     {
         let cosine: f32 = glam::Vec3A::dot(glam::Vec3A::normalize(outgoing), hi.normal);
         let bsdf: glam::Vec3A = self.albedo * std::f32::consts::FRAC_1_PI;
@@ -100,11 +123,8 @@ impl Emissive
 impl MaterialTrait for Emissive
 {
     fn scatter_direction(&self, _: &mut TlsWyRand, _: glam::Vec3A, _: glam::Vec3A, _: bool) -> glam::Vec3A { glam::Vec3A::ZERO }
-
-    fn get_brdf_pdf(&self, _: glam::Vec3A, _: glam::Vec3A, _: &HitInfo) -> BsdfPdf { BsdfPdf::new(self.emitted, 1.0) }
-
+    fn get_bsdf_pdf(&self, _: glam::Vec3A, _: glam::Vec3A, _: &HitInfo) -> BsdfPdf { BsdfPdf::new_delta(self.emitted) }
     fn get_emitted(&self) -> glam::Vec3A { self.emitted }
-
     fn is_emissive(&self) -> bool { true }
 }
 
@@ -125,7 +145,7 @@ impl MaterialTrait for Specular
         reflect(incoming.normalize(), normal)
     }
 
-    fn get_brdf_pdf(&self, _: glam::Vec3A, _: glam::Vec3A, _: &HitInfo) -> BsdfPdf { BsdfPdf::new(self.colour, 1.0) }
+    fn get_bsdf_pdf(&self, _: glam::Vec3A, _: glam::Vec3A, _: &HitInfo) -> BsdfPdf { BsdfPdf::new_delta(self.colour) }
 
     fn is_delta(&self) -> bool { true }
 }
@@ -316,7 +336,7 @@ impl MaterialTrait for GGX
         }
     }
 
-    fn get_brdf_pdf(&self, incoming: glam::Vec3A, outgoing: glam::Vec3A, hi: &HitInfo) -> BsdfPdf
+    fn get_bsdf_pdf(&self, incoming: glam::Vec3A, outgoing: glam::Vec3A, hi: &HitInfo) -> BsdfPdf
     {
         //Transform to tangent space
         let onb_inv: glam::Mat3A = generate_onb(hi.normal).transpose();
@@ -372,7 +392,7 @@ impl MaterialTrait for GGX
             match self.ggx_model
             {
                 //Return early for illegal ray directions
-                GGXModel::REFLECTIVE => BsdfPdf::new(glam::Vec3A::ZERO, 0.0),
+                GGXModel::REFLECTIVE => BsdfPdf::invalid(),
                 GGXModel::TRANSMISSIVE { ior, .. } =>
                 {
                     //Calculate transmission BSDF
@@ -475,7 +495,7 @@ impl MaterialTrait for Dielectric
         }
     }
 
-    fn get_brdf_pdf(&self, incoming: glam::Vec3A, outgoing: glam::Vec3A, hi: &HitInfo) -> BsdfPdf
+    fn get_bsdf_pdf(&self, incoming: glam::Vec3A, outgoing: glam::Vec3A, hi: &HitInfo) -> BsdfPdf
     {
         let cosine: f32 = -glam::Vec3A::dot(incoming, outgoing);
         let eta: f32 = if hi.front_facing { self.ior.recip() } else { self.ior };
@@ -493,7 +513,7 @@ impl MaterialTrait for Dielectric
         }
     }
 
-    fn get_volume(&self) -> Option<&Volume> { self.volume.as_ref() }
-
     fn is_delta(&self) -> bool { true }
+
+    fn get_volume(&self) -> Option<&Volume> { self.volume.as_ref() }
 }

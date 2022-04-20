@@ -39,7 +39,7 @@ fn estimate_direct(rng: &mut TlsWyRand, bump: &Bump, r: &Ray, hit_info: &HitInfo
     if glam::Vec3A::dot(light_ray.direction, hit_info.normal) > 0.0 && !scene.world.any_intersect(bump, &light_ray, 1.0 - EPSILON)
     {
         // Calculate pdf for current direction, given BSDF sampling
-        let light_info: BsdfPdf = mat.get_brdf_pdf(incoming, light_ray.direction, hit_info);
+        let light_info: BsdfPdf = mat.get_bsdf_pdf(incoming, light_ray.direction, hit_info);
 
         if light_info.pdf > MIN_PDF
         {
@@ -68,7 +68,7 @@ fn estimate_direct(rng: &mut TlsWyRand, bump: &Bump, r: &Ray, hit_info: &HitInfo
             if !scene.world.any_intersect(bump, &material_ray, material_hi.t * (1.0 - EPSILON))
             {
                 // Calculate pdf for current direction, given BSDF sampling
-                let material_info: BsdfPdf = mat.get_brdf_pdf(incoming, material_ray.direction, hit_info);
+                let material_info: BsdfPdf = mat.get_bsdf_pdf(incoming, material_ray.direction, hit_info);
 
                 if material_info.pdf > MIN_PDF
                 {
@@ -183,7 +183,7 @@ pub(crate) fn integrate(mut r: Ray, scene: &Scene, env: &ImageResult<DynamicImag
                     break;
                 }
 
-                let material_info: BsdfPdf = material.get_brdf_pdf(wi, r.direction, &hit_info);
+                let material_info: BsdfPdf = material.get_bsdf_pdf(wi, r.direction, &hit_info);
 
                 if material_info.pdf < MIN_PDF
                 {

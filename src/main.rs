@@ -86,7 +86,7 @@ fn main()
     let diffuse_red = Lambertian::new(glam::Vec3A::new(0.65, 0.05, 0.05));
     let diffuse_blue = Lambertian::new(glam::Vec3A::new(0.05, 0.05, 0.25));
     let ggx_blue = GGX::new_metal(glam::Vec3A::new(0.1, 0.1, 0.45), 0.4);
-    let brown_glass_ggx = GGX::new_dielectric(glam::Vec3A::splat(0.95), 0.1, 1.5, Some(volume));
+    let brown_glass_ggx = GGX::new_dielectric(glam::Vec3A::splat(0.95), 0.2, 1.5, Some(volume));
     let clear_glass_ggx = GGX::new_dielectric(glam::Vec3A::ONE, 0.0, 1.5, Some(volume));
     let glass = Dielectric::new(glam::Vec3A::splat(0.95), 1.5, Some(volume));
     let mirror = Specular::new(glam::Vec3A::ONE);
@@ -106,7 +106,7 @@ fn main()
         // //Model::new("models/cornell/cb_box_short.obj", &diffuse_gray),
         // //Model::new("models/sphere_offset.obj", &glass),
         Model::new("models/zenobia.obj", &ggx_blue),
-        Model::new("models/cornell/dragon.obj", &glass),
+        Model::new("models/cornell/dragon.obj", &brown_glass_ggx),
         // Model::new("models/sphere.obj", &clear_glass_ggx),
     ];
 
