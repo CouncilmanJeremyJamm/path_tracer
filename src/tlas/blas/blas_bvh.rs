@@ -43,7 +43,7 @@ pub(crate) enum BLASNodeType
     },
     Leaf
     {
-        primitive_indices: Vec<u32>
+        primitive_indices: Box<[u32]>
     },
     Branch
     {
@@ -125,7 +125,7 @@ impl BLASNode
                 Self {
                     bounding_box,
                     node_type: BLASNodeType::Leaf {
-                        primitive_indices: object_info.iter().map(|a| a.primitive_index).collect(),
+                        primitive_indices: object_info.iter().map(|a| a.primitive_index).collect::<Vec<_>>().into_boxed_slice(),
                     },
                 }
             }
