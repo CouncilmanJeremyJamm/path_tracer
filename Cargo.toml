@@ -9,6 +9,10 @@ opt-level = 1
 [profile.release]
 lto = "thin"
 
+[profile.release_debug]
+inherits = "release"
+debug = true
+
 [dependencies.image]
 version = "0.24.1"
 default-features = false
