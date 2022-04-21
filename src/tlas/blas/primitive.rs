@@ -60,109 +60,6 @@ impl Triangle
         self.normals * glam::Vec3A::new(w, u, v)
     }
 
-    fn intersect_naive(&self, ray: &Ray, t_min: f32, t_max: f32) -> Option<HitInfo>
-    {
-        let det: f32 = glam::Vec3A::dot(ray.direction, self.n0.into());
-        let td: f32 = -glam::Vec4::dot(ray.origin.extend(-1.0), self.n0);
-
-        if (td - det * t_min).signum() != (det * t_max - td).signum()
-        {
-            return None;
-        }
-
-        let p: glam::Vec4 = (det * ray.origin + td * ray.direction).extend(det);
-
-        let ud: f32 = glam::Vec4::dot(p, self.n1);
-
-        if ud.signum() != (det - ud).signum()
-        {
-            return None;
-        }
-
-        let vd: f32 = glam::Vec4::dot(p, self.n2);
-
-        if vd.signum() != (det - ud - vd).signum()
-        {
-            return None;
-        }
-
-        let [t, u, v]: [f32; 3] = (glam::Vec3A::new(td, ud, vd) / det).into();
-
-        let n: glam::Vec3A = self.get_normal(u, v);
-        let face_forward: bool = glam::Vec3A::dot(ray.direction, n) < 0.0;
-
-        let hit_info: HitInfo = HitInfo {
-            normal: if face_forward { n } else { -n },
-            local: glam::Vec2::new(u, v),
-            t,
-            front_facing: face_forward,
-        };
-
-        Some(hit_info)
-    }
-
-    pub fn intersect(&self, ray: &Ray, t_max: f32, t_estimate: f32) -> Option<HitInfo>
-    {
-        let moved_ray: Ray = Ray {
-            origin: ray.at(t_estimate),
-            ..*ray
-        };
-
-        self.intersect_naive(&moved_ray, EPSILON - t_estimate, t_max - t_estimate)
-            .map(|hit_info| HitInfo {
-                t: hit_info.t + t_estimate,
-                ..hit_info
-            })
-    }
-
-    fn intersect_bool_naive(&self, ray: &Ray, t_min: f32, t_max: f32) -> bool
-    {
-        let det: f32 = glam::Vec3A::dot(ray.direction, self.n0.into());
-        let td: f32 = -glam::Vec4::dot(ray.origin.extend(-1.0), self.n0);
-
-        if (td - det * t_min).signum() != (det * t_max - td).signum()
-        {
-            return false;
-        }
-
-        let p: glam::Vec4 = (det * ray.origin + td * ray.direction).extend(det);
-
-        let ud: f32 = glam::Vec4::dot(p, self.n1);
-
-        if ud.signum() != (det - ud).signum()
-        {
-            return false;
-        }
-
-        let vd: f32 = glam::Vec4::dot(p, self.n2);
-
-        if vd.signum() != (det - ud - vd).signum()
-        {
-            return false;
-        }
-
-        true
-    }
-
-    pub fn intersect_bool(&self, ray: &Ray, t_max: f32, t_estimate: f32) -> bool
-    {
-        let moved_ray: Ray = Ray {
-            origin: ray.at(t_estimate),
-            ..*ray
-        };
-
-        self.intersect_bool_naive(&moved_ray, EPSILON - t_estimate, t_max - t_estimate)
-    }
-
-    /// Returns the AABB of the current triangle
-    pub fn create_bounding_box(&self) -> AABB
-    {
-        let minimum: glam::Vec3A = self.positions.col(0).min(self.positions.col(1)).min(self.positions.col(2));
-        let maximum: glam::Vec3A = self.positions.col(0).max(self.positions.col(1)).max(self.positions.col(2));
-
-        AABB::new(minimum, maximum)
-    }
-
     /// Computes the world position at the barycentric coordinates (u, v)
     pub fn get_position(&self, u: f32, v: f32) -> glam::Vec3A
     {
@@ -193,4 +90,99 @@ impl Triangle
 
     /// Computes the area of the current triangle
     pub fn area(&self) -> f32 { 0.5 * glam::Vec3A::length(glam::Vec3A::from(self.n0)) }
+
+    /// Returns the AABB of the current triangle
+    pub fn create_bounding_box(&self) -> AABB
+    {
+        let minimum: glam::Vec3A = self.positions.col(0).min(self.positions.col(1)).min(self.positions.col(2));
+        let maximum: glam::Vec3A = self.positions.col(0).max(self.positions.col(1)).max(self.positions.col(2));
+
+        AABB::new(minimum, maximum)
+    }
+
+    /// Implementation of *Yet Faster Ray-Triangle Intersection* by Havel & Herout
+    ///
+    /// This is labelled as *naive* as the ray origin is not translated before testing, reducing precision
+    /// # Returns
+    /// `Some(a)` or `None`
+    /// * `a` - glam::Vec4 containing the components:
+    ///     * `x`: `t * det`
+    ///     * `y`: `u * det`
+    ///     * `z`: `v * det`
+    ///     * `w`: `det`
+    ///
+    /// This defers the division to obtain t, u, and v, which are not needed in the any-intersection test
+    fn intersect_naive(&self, ray: &Ray, t_min: f32, t_max: f32) -> Option<glam::Vec4>
+    {
+        let det: f32 = glam::Vec3A::dot(ray.direction, self.n0.into());
+        let td: f32 = -glam::Vec4::dot(ray.origin.extend(-1.0), self.n0);
+
+        if (td - det * t_min).signum() != (det * t_max - td).signum()
+        {
+            return None;
+        }
+
+        let p: glam::Vec4 = (det * ray.origin + td * ray.direction).extend(det);
+
+        let ud: f32 = glam::Vec4::dot(p, self.n1);
+
+        if ud.signum() != (det - ud).signum()
+        {
+            return None;
+        }
+
+        let vd: f32 = glam::Vec4::dot(p, self.n2);
+
+        if vd.signum() != (det - ud - vd).signum()
+        {
+            return None;
+        }
+
+        Some(glam::Vec4::new(td, ud, vd, det))
+    }
+
+    /// Full intersection test, with ray pre-translation
+    pub fn intersect(&self, ray: &Ray, t_max: f32, t_estimate: f32) -> Option<HitInfo>
+    {
+        // Translate the ray before running the naive test
+        let moved_ray: Ray = Ray {
+            origin: ray.at(t_estimate),
+            ..*ray
+        };
+
+        if let Some(tuvd) = self.intersect_naive(&moved_ray, EPSILON - t_estimate, t_max - t_estimate)
+        {
+            // Divide the returned components by det
+            let [t, u, v]: [f32; 3] = (glam::Vec3A::from(tuvd) / tuvd.w).into();
+
+            // Obtain the shading normal, and record whether the ray was incident on the inside or outside of the triangle
+            let n: glam::Vec3A = self.get_normal(u, v);
+            let face_forward: bool = glam::Vec3A::dot(ray.direction, n) < 0.0;
+
+            let hit_info: HitInfo = HitInfo {
+                normal: if face_forward { n } else { -n },
+                local: glam::Vec2::new(u, v),
+                // Adjust the t value to account for pre-translation
+                t: t + t_estimate,
+                front_facing: face_forward,
+            };
+
+            Some(hit_info)
+        }
+        else
+        {
+            None
+        }
+    }
+
+    /// Any-intersection test, with ray pre-translation
+    pub fn intersect_bool(&self, ray: &Ray, t_max: f32, t_estimate: f32) -> bool
+    {
+        let moved_ray: Ray = Ray {
+            origin: ray.at(t_estimate),
+            ..*ray
+        };
+
+        self.intersect_naive(&moved_ray, EPSILON - t_estimate, t_max - t_estimate).is_some()
+    }
 }
