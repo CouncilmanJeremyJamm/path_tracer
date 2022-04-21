@@ -10,68 +10,83 @@ use crate::HitInfo;
 pub mod material;
 pub mod model;
 
+/// Triangles are the only primitive implemented in the path tracer
 pub struct Triangle
 {
+    /// Positions of vertices A, B, and C
     positions: glam::Mat3A,
+    /// Normals at vertices A, B, and C
     normals: glam::Mat3A,
-    a: glam::Vec3A,
-    b: glam::Vec3A,
+    // Precomputed vectors to use in intersection tests
+    /// `n`, with `d` packed in the `w`-component
+    n0: glam::Vec4,
+    /// `n1`, with `d1` packed in the `w`-component
+    n1: glam::Vec4,
+    /// `n2`, with `d2` packed in the `w`-component
+    n2: glam::Vec4,
 }
 
 impl Triangle
 {
     pub fn new(v: &[Vertex; 3]) -> Self
     {
-        let a: glam::Vec3A = v[1].position - v[0].position;
-        let b: glam::Vec3A = v[2].position - v[0].position;
+        // Precompute all possible values used in intersection tests
+        let ab: glam::Vec3A = v[1].position - v[0].position;
+        let ac: glam::Vec3A = v[2].position - v[0].position;
+
+        let n0: glam::Vec3A = glam::Vec3A::cross(ab, ac);
+        let d0: f32 = glam::Vec3A::dot(n0, v[0].position);
+        let scale: f32 = n0.length_squared();
+
+        let n1: glam::Vec3A = glam::Vec3A::cross(ac, n0) / scale;
+        let d1: f32 = -glam::Vec3A::dot(n1, v[0].position);
+
+        let n2: glam::Vec3A = glam::Vec3A::cross(n0, ab) / scale;
+        let d2: f32 = -glam::Vec3A::dot(n2, v[0].position);
+
         Self {
             positions: glam::Mat3A::from_cols(v[0].position, v[1].position, v[2].position),
             normals: glam::Mat3A::from_cols(v[0].normal, v[1].normal, v[2].normal),
-            a,
-            b,
+            n0: n0.extend(d0),
+            n1: n1.extend(d1),
+            n2: n2.extend(d2),
         }
     }
 
+    /// Computes the normal at the barycentric coordinates (u, v)
     pub fn get_normal(&self, u: f32, v: f32) -> glam::Vec3A
     {
         let w: f32 = 1.0 - u - v;
         self.normals * glam::Vec3A::new(w, u, v)
     }
 
-    pub fn intersect_naive(&self, ray: &Ray, t_min: f32, t_max: f32) -> Option<HitInfo>
+    fn intersect_naive(&self, ray: &Ray, t_min: f32, t_max: f32) -> Option<HitInfo>
     {
-        let p_vec: glam::Vec3A = glam::Vec3A::cross(ray.direction, self.b);
-        let determinant: f32 = glam::Vec3A::dot(self.a, p_vec);
+        let det: f32 = glam::Vec3A::dot(ray.direction, self.n0.into());
+        let td: f32 = -glam::Vec4::dot(ray.origin.extend(-1.0), self.n0);
 
-        if determinant.abs() < 1e-10
+        if (td - det * t_min).signum() != (det * t_max - td).signum()
         {
             return None;
         }
 
-        let inv_determinant: f32 = 1.0 / determinant;
+        let p: glam::Vec4 = (det * ray.origin + td * ray.direction).extend(det);
 
-        let t_vec: glam::Vec3A = ray.origin - self.positions.col(0);
-        let u: f32 = glam::Vec3A::dot(t_vec, p_vec) * inv_determinant;
+        let ud: f32 = glam::Vec4::dot(p, self.n1);
 
-        if u < 0.0 || u > 1.0
+        if ud.signum() != (det - ud).signum()
         {
             return None;
         }
 
-        let q_vec: glam::Vec3A = glam::Vec3A::cross(t_vec, self.a);
-        let v: f32 = glam::Vec3A::dot(ray.direction, q_vec) * inv_determinant;
+        let vd: f32 = glam::Vec4::dot(p, self.n2);
 
-        if v < 0.0 || u + v > 1.0
+        if vd.signum() != (det - ud - vd).signum()
         {
             return None;
         }
 
-        let t: f32 = glam::Vec3A::dot(self.b, q_vec) * inv_determinant;
-        //println!("{}", t);
-        if t < t_min || t > t_max
-        {
-            return None;
-        }
+        let [t, u, v]: [f32; 3] = (glam::Vec3A::new(td, ud, vd) / det).into();
 
         let n: glam::Vec3A = self.get_normal(u, v);
         let face_forward: bool = glam::Vec3A::dot(ray.direction, n) < 0.0;
@@ -102,35 +117,26 @@ impl Triangle
 
     fn intersect_bool_naive(&self, ray: &Ray, t_min: f32, t_max: f32) -> bool
     {
-        let p_vec: glam::Vec3A = glam::Vec3A::cross(ray.direction, self.b);
-        let determinant: f32 = glam::Vec3A::dot(self.a, p_vec);
+        let det: f32 = glam::Vec3A::dot(ray.direction, self.n0.into());
+        let td: f32 = -glam::Vec4::dot(ray.origin.extend(-1.0), self.n0);
 
-        if determinant.abs() < 1e-10
+        if (td - det * t_min).signum() != (det * t_max - td).signum()
         {
             return false;
         }
 
-        let inv_determinant: f32 = 1.0 / determinant;
+        let p: glam::Vec4 = (det * ray.origin + td * ray.direction).extend(det);
 
-        let t_vec: glam::Vec3A = ray.origin - self.positions.col(0);
-        let u: f32 = glam::Vec3A::dot(t_vec, p_vec) * inv_determinant;
+        let ud: f32 = glam::Vec4::dot(p, self.n1);
 
-        if u < 0.0 || u > 1.0
+        if ud.signum() != (det - ud).signum()
         {
             return false;
         }
 
-        let q_vec: glam::Vec3A = glam::Vec3A::cross(t_vec, self.a);
-        let v: f32 = glam::Vec3A::dot(ray.direction, q_vec) * inv_determinant;
+        let vd: f32 = glam::Vec4::dot(p, self.n2);
 
-        if v < 0.0 || u + v > 1.0
-        {
-            return false;
-        }
-
-        let t: f32 = glam::Vec3A::dot(self.b, q_vec) * inv_determinant;
-
-        if t < t_min || t > t_max
+        if vd.signum() != (det - ud - vd).signum()
         {
             return false;
         }
@@ -148,6 +154,7 @@ impl Triangle
         self.intersect_bool_naive(&moved_ray, EPSILON - t_estimate, t_max - t_estimate)
     }
 
+    /// Returns the AABB of the current triangle
     pub fn create_bounding_box(&self) -> AABB
     {
         let minimum: glam::Vec3A = self.positions.col(0).min(self.positions.col(1)).min(self.positions.col(2));
@@ -156,17 +163,21 @@ impl Triangle
         AABB::new(minimum, maximum)
     }
 
+    /// Computes the world position at the barycentric coordinates (u, v)
     pub fn get_position(&self, u: f32, v: f32) -> glam::Vec3A
     {
         let w: f32 = 1.0 - u - v;
         self.positions * glam::Vec3A::new(w, u, v)
     }
 
-    //Obtains a random point on the primitive, distributed uniformly on the surface
-    //Return the point, and the normal at that point
+    /// Obtains a random point on the primitive, distributed uniformly on the surface
+    /// # Returns
+    /// (`p`, `n`)
+    /// * `p` - world position of the sampled point
+    /// * `n` - normal at the sampled point
     pub fn random_point(&self, rng: &mut TlsWyRand) -> (glam::Vec3A, glam::Vec3A)
     {
-        //Flipping sampling method from NVIDIA's RTG-1, pg. 236
+        //Diagonal flip sampling method from NVIDIA's RTG-1, pg. 236
         //Cannot use low-discrepancy sequences, no guarantee on distribution after folding
         let mut u: f32 = rng.generate();
         let mut v: f32 = rng.generate();
@@ -180,5 +191,6 @@ impl Triangle
         (self.get_position(u, v), self.get_normal(u, v))
     }
 
-    pub fn area(&self) -> f32 { 0.5 * glam::Vec3A::length(glam::Vec3A::cross(self.a, self.b)) }
+    /// Computes the area of the current triangle
+    pub fn area(&self) -> f32 { 0.5 * glam::Vec3A::length(glam::Vec3A::from(self.n0)) }
 }
