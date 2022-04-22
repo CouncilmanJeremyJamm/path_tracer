@@ -16,8 +16,5 @@ impl Ray
         }
     }
 
-    pub fn at(&self, t: f32) -> glam::Vec3A
-    {
-        self.origin + (self.direction * t)
-    }
+    pub fn at(&self, t: f32) -> glam::Vec3A { self.direction.mul_add(glam::Vec3A::splat(t), self.origin) }
 }
