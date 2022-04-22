@@ -27,7 +27,6 @@ pub fn refract(i: glam::Vec3A, n: glam::Vec3A, eta: f32) -> glam::Vec3A
     if k <= 0.0
     {
         glam::Vec3A::NAN
-        //panic!("Cannot refract")
     }
     else
     {

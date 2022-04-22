@@ -46,7 +46,7 @@ pub fn load_obj(path: &std::path::Path) -> Vec<Vertex>
                 let y: f32 = tokens[2].parse().unwrap();
                 let z: f32 = tokens[3].parse().unwrap();
 
-                normals.push(glam::Vec3A::new(x, y, z));
+                normals.push(glam::Vec3A::new(x, y, z).normalize());
             }
             "f" =>
             //Polygon

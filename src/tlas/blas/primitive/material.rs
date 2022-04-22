@@ -2,7 +2,6 @@ use enum_dispatch::enum_dispatch;
 use nanorand::tls::TlsWyRand;
 use nanorand::Rng;
 
-use crate::ray::Ray;
 use crate::tlas::blas::primitive::material::onb::{generate_onb, generate_onb_ggx};
 use crate::tlas::blas::primitive::model::HitInfo;
 use crate::utility::{random_cosine_vector, reflect, refract};
@@ -103,7 +102,7 @@ impl MaterialTrait for Lambertian
 
     fn get_bsdf_pdf(&self, _incoming: glam::Vec3A, outgoing: glam::Vec3A, hi: &HitInfo) -> BsdfPdf
     {
-        let cosine: f32 = glam::Vec3A::dot(glam::Vec3A::normalize(outgoing), hi.normal);
+        let cosine: f32 = glam::Vec3A::dot(outgoing, hi.normal);
         let bsdf: glam::Vec3A = self.albedo * std::f32::consts::FRAC_1_PI;
         let pdf: f32 = cosine * std::f32::consts::FRAC_1_PI;
         BsdfPdf::new(bsdf, pdf)
@@ -140,10 +139,7 @@ impl Specular
 
 impl MaterialTrait for Specular
 {
-    fn scatter_direction(&self, _: &mut TlsWyRand, incoming: glam::Vec3A, normal: glam::Vec3A, _: bool) -> glam::Vec3A
-    {
-        reflect(incoming.normalize(), normal)
-    }
+    fn scatter_direction(&self, _: &mut TlsWyRand, incoming: glam::Vec3A, normal: glam::Vec3A, _: bool) -> glam::Vec3A { reflect(incoming, normal) }
 
     fn get_bsdf_pdf(&self, _: glam::Vec3A, _: glam::Vec3A, _: &HitInfo) -> BsdfPdf { BsdfPdf::new_delta(self.colour) }
 
@@ -305,29 +301,27 @@ impl MaterialTrait for GGX
 {
     fn scatter_direction(&self, rng: &mut TlsWyRand, incoming: glam::Vec3A, normal: glam::Vec3A, front_facing: bool) -> glam::Vec3A
     {
-        let direction: glam::Vec3A = incoming.normalize();
-
         //Generate half-vector from the GGX distribution
-        let h: glam::Vec3A = self.generate_half_vector(rng, direction, normal);
+        let h: glam::Vec3A = self.generate_half_vector(rng, incoming, normal);
 
         //Reflect or refract using the half-vector as the normal
         match self.ggx_model
         {
-            GGXModel::REFLECTIVE => reflect(direction, h),
+            GGXModel::REFLECTIVE => reflect(incoming, h),
             GGXModel::TRANSMISSIVE { ior, .. } =>
             {
                 let eta: f32 = if front_facing { ior.recip() } else { ior };
                 let f0: f32 = ((eta - 1.0) / (eta + 1.0)).powi(2);
 
-                let f: f32 = self.f(-glam::Vec3A::dot(direction, h), f0);
+                let f: f32 = self.f(-glam::Vec3A::dot(incoming, h), f0);
 
                 //If refract() returns NaN, this indicates total internal reflection
-                let refracted: glam::Vec3A = refract(direction, h, eta);
+                let refracted: glam::Vec3A = refract(incoming, h, eta);
                 let ray_reflected: bool = refracted.is_nan() || rng.generate::<f32>() < f;
 
                 if ray_reflected
                 {
-                    reflect(direction, h)
+                    reflect(incoming, h)
                 }
                 else
                 {
@@ -344,8 +338,8 @@ impl MaterialTrait for GGX
 
         //Outgoing = direction of light ray = -direction of tracing ray
         //Incoming = direction of scattering
-        let wi: glam::Vec3A = onb_inv * outgoing.normalize();
-        let wo: glam::Vec3A = onb_inv * incoming.normalize();
+        let wi: glam::Vec3A = onb_inv * outgoing;
+        let wo: glam::Vec3A = onb_inv * incoming;
 
         let ray_transmitted: bool = wi.z < 0.0;
 
@@ -481,18 +475,16 @@ impl MaterialTrait for Dielectric
 {
     fn scatter_direction(&self, rng: &mut TlsWyRand, incoming: glam::Vec3A, normal: glam::Vec3A, front_facing: bool) -> glam::Vec3A
     {
-        let direction: glam::Vec3A = incoming.normalize();
-
         let eta: f32 = if front_facing { self.ior.recip() } else { self.ior };
-        let cosine: f32 = -glam::Vec3A::dot(direction, normal);
+        let cosine: f32 = -glam::Vec3A::dot(incoming, normal);
 
         if rng.generate::<f32>() < Self::f(cosine, eta)
         {
-            reflect(direction, normal)
+            reflect(incoming, normal)
         }
         else
         {
-            refract(direction, normal, eta)
+            refract(incoming, normal, eta)
         }
     }
 

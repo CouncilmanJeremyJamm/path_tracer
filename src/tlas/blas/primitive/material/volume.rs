@@ -55,15 +55,15 @@ impl VolumeScatter
         let y: f32 = r * sine;
 
         // Return scatter direction in world space
-        let onb: glam::Mat3A = generate_onb(-incoming.normalize());
+        let onb: glam::Mat3A = generate_onb(-incoming);
         onb * glam::Vec3A::new(x, y, z)
     }
 
     /// Returns the probability of generating the outgoing direction given the incoming direction
     fn scatter_pdf(&self, incoming: glam::Vec3A, outgoing: glam::Vec3A) -> f32
     {
-        let wi: glam::Vec3A = outgoing.normalize();
-        let wo: glam::Vec3A = incoming.normalize();
+        let wi: glam::Vec3A = outgoing;
+        let wo: glam::Vec3A = incoming;
 
         let cosine: f32 = glam::Vec3A::dot(wi, wo);
 

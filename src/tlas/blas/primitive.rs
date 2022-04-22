@@ -57,7 +57,9 @@ impl Triangle
     pub fn get_normal(&self, u: f32, v: f32) -> glam::Vec3A
     {
         let w: f32 = 1.0 - u - v;
-        self.normals * glam::Vec3A::new(w, u, v)
+
+        // Normalize the computed normal to account for small rounding errors
+        (self.normals * glam::Vec3A::new(w, u, v)).normalize()
     }
 
     /// Computes the world position at the barycentric coordinates (u, v)

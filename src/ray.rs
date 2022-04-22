@@ -9,6 +9,7 @@ impl Ray
 {
     pub fn new(o: glam::Vec3A, d: glam::Vec3A) -> Self
     {
+        debug_assert!(d.is_normalized());
         Self {
             origin: o,
             direction: d,
