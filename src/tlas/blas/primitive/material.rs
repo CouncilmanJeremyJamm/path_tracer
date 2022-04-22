@@ -249,7 +249,8 @@ impl GGX
         let _a: f32 = 1.0 / (1.0 + v.z);
         let condition: bool = u2 < _a; //If condition is true, sample from the tilted half-disk
 
-        let r: f32 = u1.sqrt();
+        // If r == 1.0, the resultant half-vector contains only NaN components
+        let r: f32 = u1.sqrt().min(0.9999);
         let phi: f32 = if condition
         {
             std::f32::consts::PI * u2 / _a

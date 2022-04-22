@@ -32,11 +32,13 @@ fn estimate_direct(rng: &mut TlsWyRand, bump: &Bump, r: &Ray, hit_info: &HitInfo
     let o: glam::Vec3A = r.at(hit_info.t);
     let d: glam::Vec3A = point - o;
 
-    let light_ray: Ray = Ray::new(o, d);
+    let distance: f32 = d.length();
+
+    let light_ray: Ray = Ray::new(o, d.normalize());
 
     // Cast shadow ray
     // If light ray points against the normal, occlusion is guaranteed and the shadow ray is skipped
-    if glam::Vec3A::dot(light_ray.direction, hit_info.normal) > 0.0 && !scene.world.any_intersect(bump, &light_ray, 1.0 - EPSILON)
+    if glam::Vec3A::dot(light_ray.direction, hit_info.normal) > 0.0 && !scene.world.any_intersect(bump, &light_ray, (1.0 - EPSILON) * distance)
     {
         // Calculate pdf for current direction, given BSDF sampling
         let light_info: BsdfPdf = mat.get_bsdf_pdf(incoming, light_ray.direction, hit_info);
@@ -45,7 +47,7 @@ fn estimate_direct(rng: &mut TlsWyRand, bump: &Bump, r: &Ray, hit_info: &HitInfo
         {
             // Calculate pdf for current direction, given light sampling
             let cosine: f32 = glam::Vec3A::dot(d.normalize(), light_normal).abs();
-            let light_pdf: f32 = d.length_squared() * pdf / (cosine * light.area());
+            let light_pdf: f32 = distance * distance * pdf / (cosine * light.area());
 
             // Calculate weight from heuristic, then accumulate direct light
             let weight: f32 = power_heuristic(light_pdf, light_info.pdf);
@@ -147,9 +149,12 @@ pub(crate) fn integrate(mut r: Ray, scene: &Scene, env: &ImageResult<DynamicImag
                 continue;
             }
 
-            if material.is_emissive() && (!ENABLE_NEE || last_delta || b == 0)
+            if material.is_emissive()
             {
-                accumulated += material.get_emitted() * path_weight;
+                if !ENABLE_NEE || last_delta || b == 0
+                {
+                    accumulated += material.get_emitted() * path_weight;
+                }
                 break;
             }
             else

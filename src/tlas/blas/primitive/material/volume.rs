@@ -50,7 +50,7 @@ impl VolumeScatter
 
         let (sine, cosine): (f32, f32) = phi.sin_cos();
 
-        let r: f32 = 1.0 - z * z;
+        let r: f32 = (1.0 - z * z).sqrt();
         let x: f32 = r * cosine;
         let y: f32 = r * sine;
 
