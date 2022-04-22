@@ -6,13 +6,14 @@ pub const INFINITY: f32 = f32::INFINITY;
 
 pub fn random_cosine_vector(rng: &mut TlsWyRand) -> glam::Vec3A
 {
-    let r1: f32 = rng.generate();
-    let r2: f32 = rng.generate();
-    let z: f32 = (1.0 - r2).sqrt();
+    let r: f32 = rng.generate::<f32>().sqrt();
+    let z: f32 = (1.0 - r * r).sqrt();
 
-    let phi: f32 = std::f32::consts::TAU * r1;
-    let x: f32 = phi.cos() * r2.sqrt();
-    let y: f32 = phi.sin() * r2.sqrt();
+    let phi: f32 = std::f32::consts::TAU * rng.generate::<f32>();
+    let (sin, cos): (f32, f32) = phi.sin_cos();
+
+    let x: f32 = cos * r;
+    let y: f32 = sin * r;
 
     glam::Vec3A::new(x, y, z)
 }
