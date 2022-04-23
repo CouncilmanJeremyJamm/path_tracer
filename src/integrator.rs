@@ -135,11 +135,11 @@ pub(crate) fn integrate(mut r: Ray, scene: &Scene, env: &ImageResult<DynamicImag
             {
                 r = Ray::new(r.at(t), dir);
 
-                (true, r.direction.length() * t)
+                (true, t)
             }
             else
             {
-                (false, r.direction.length() * hit_info.t)
+                (false, hit_info.t)
             };
 
             path_weight *= absorbing.fold(glam::Vec3A::ONE, |w, a| w * a.get_transmission(dist));
