@@ -1,9 +1,10 @@
 use bumpalo::Bump;
-use image::{ImageResult, Pixel, Rgb32FImage};
+use image::ImageError;
 use nanorand::tls::TlsWyRand;
 use nanorand::Rng;
 use nohash_hasher::IntSet;
 
+use crate::image_helper::ImageHelper;
 use crate::{BsdfPdf, HitInfo, Material, MaterialTrait, Ray, Scene, Triangle, Volume, ENABLE_NEE, EPSILON, INFINITY};
 
 const MIN_PDF: f32 = 1e-8;
@@ -94,7 +95,7 @@ fn estimate_direct(rng: &mut TlsWyRand, bump: &Bump, r: &Ray, hit_info: &HitInfo
     direct
 }
 
-pub(crate) fn integrate(mut r: Ray, scene: &Scene, env: &ImageResult<Rgb32FImage>, max_bounces: u32) -> glam::Vec3A
+pub(crate) fn integrate(mut r: Ray, scene: &Scene, env: &Result<ImageHelper, ImageError>, max_bounces: u32) -> glam::Vec3A
 {
     let mut rng: TlsWyRand = nanorand::tls_rng();
     let bump: Bump = Bump::new();
@@ -201,28 +202,25 @@ pub(crate) fn integrate(mut r: Ray, scene: &Scene, env: &ImageResult<Rgb32FImage
         {
             if let Ok(image) = env.as_ref()
             {
-                let dimensions: (u32, u32) = image.dimensions();
+                let dimensions: glam::UVec2 = image.dimensions;
 
                 let u: f32 = r.direction.x.atan2(r.direction.z).mul_add(std::f32::consts::FRAC_1_PI * 0.5, 0.5);
                 let v: f32 = r.direction.y.asin().mul_add(-std::f32::consts::FRAC_1_PI, 0.5);
 
-                let x: f32 = (dimensions.0 as f32) * u;
-                let y: f32 = (dimensions.1 as f32) * v;
+                let x: f32 = (dimensions.x as f32) * u;
+                let y: f32 = (dimensions.y as f32) * v;
 
-                let x0: u32 = (x as u32) % dimensions.0;
-                let y0: u32 = (y as u32) % dimensions.1;
-
-                let x1: u32 = (x0 + 1) % dimensions.0;
-                let y1: u32 = (y0 + 1) % dimensions.1;
+                let x0: u32 = x as u32;
+                let y0: u32 = y as u32;
 
                 let x_fract: f32 = x.fract();
                 let y_fract: f32 = y.fract();
 
                 //TODO: move bi-linear interpolation into function
-                let c_00: glam::Vec3A = remove_gamma(image.get_pixel(x0, y0));
-                let c_01: glam::Vec3A = remove_gamma(image.get_pixel(x0, y1));
-                let c_10: glam::Vec3A = remove_gamma(image.get_pixel(x1, y0));
-                let c_11: glam::Vec3A = remove_gamma(image.get_pixel(x1, y1));
+                let c_00: glam::Vec3A = image.get_pixel(x0, y0);
+                let c_01: glam::Vec3A = image.get_pixel(x0, y0 + 1);
+                let c_10: glam::Vec3A = image.get_pixel(x0 + 1, y0);
+                let c_11: glam::Vec3A = image.get_pixel(x0 + 1, y0 + 1);
 
                 let colour: glam::Vec3A = (1.0 - x_fract) * (1.0 - y_fract) * c_00
                     + (1.0 - x_fract) * y_fract * c_01
@@ -249,16 +247,3 @@ pub(crate) fn integrate(mut r: Ray, scene: &Scene, env: &ImageResult<Rgb32FImage
         glam::Vec3A::ZERO
     }
 }
-
-fn f32_to_u8(a: f32) -> u8 { (a.powf(1.0 / 2.2) * 255.0) as u8 }
-
-pub fn map_colour(a: &glam::Vec3A) -> [u8; 3]
-{
-    [
-        f32_to_u8(a.x.clamp(0.0, 1.0)),
-        f32_to_u8(a.y.clamp(0.0, 1.0)),
-        f32_to_u8(a.z.clamp(0.0, 1.0)),
-    ]
-}
-
-fn remove_gamma(p: &image::Rgb<f32>) -> glam::Vec3A { glam::Vec3A::from_slice(p.channels()).powf(2.2) }

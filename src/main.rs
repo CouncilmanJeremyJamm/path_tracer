@@ -2,8 +2,6 @@
 #![feature(allocator_api, array_chunks, bool_to_option)]
 extern crate core;
 
-use std::path::Path;
-
 use rayon::prelude::*;
 
 use tlas::blas::primitive::material::*;
@@ -11,6 +9,7 @@ use tlas::blas::primitive::model::{HitInfo, Model};
 use tlas::blas::primitive::Triangle;
 
 use crate::camera::Camera;
+use crate::image_helper::ImageHelper;
 use crate::ray::Ray;
 use crate::scene::Scene;
 use crate::tlas::TLAS;
@@ -21,6 +20,7 @@ use crate::volume::Volume;
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 mod camera;
+mod image_helper;
 mod integrator;
 mod ray;
 mod scene;
@@ -69,12 +69,10 @@ fn generate_halton(base_x: u32, base_y: u32, num_samples: u32) -> Vec<glam::Vec2
         .collect()
 }
 
-fn load_image<P: AsRef<Path>>(path: P) -> image::ImageResult<image::Rgb32FImage> { Ok(image::io::Reader::open(path)?.decode()?.into_rgb32f()) }
-
 fn main()
 {
     println!("Loading images...");
-    let env = load_image("images/env/cannon_4k.png");
+    let env = ImageHelper::load_image("images/env/cannon_4k.png");
 
     //Materials
     println!("Creating materials...");
@@ -128,7 +126,7 @@ fn main()
     println!("Starting path-tracing...");
     let render_begin = std::time::Instant::now();
 
-    let image_data: Vec<glam::Vec3A> = (0..(IMAGE_WIDTH * IMAGE_HEIGHT))
+    let output_data: Vec<glam::Vec3A> = (0..(IMAGE_WIDTH * IMAGE_HEIGHT))
         .into_par_iter()
         .map(|i: usize| {
             let x: usize = i % IMAGE_WIDTH;
@@ -149,16 +147,7 @@ fn main()
 
     println!("Finished path-tracing, took {} seconds", render_begin.elapsed().as_secs());
 
-    println!("Converting data...");
-    let data: Vec<u8> = image_data.par_iter().flat_map_iter(integrator::map_colour).collect();
+    let output_image = ImageHelper::new(output_data, glam::UVec2::new(IMAGE_WIDTH as u32, IMAGE_HEIGHT as u32));
 
-    println!("Saving output...");
-    image::save_buffer(
-        "images/output.png",
-        data.as_slice(),
-        IMAGE_WIDTH as u32,
-        IMAGE_HEIGHT as u32,
-        image::ColorType::Rgb8,
-    )
-    .expect("Failed writing output image");
+    output_image.write_image("images/output.png").expect("Failed writing output image")
 }
