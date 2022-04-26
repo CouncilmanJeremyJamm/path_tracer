@@ -2,6 +2,8 @@
 #![feature(allocator_api, array_chunks, bool_to_option)]
 extern crate core;
 
+use std::path::Path;
+
 use rayon::prelude::*;
 
 use tlas::blas::primitive::material::*;
@@ -67,14 +69,12 @@ fn generate_halton(base_x: u32, base_y: u32, num_samples: u32) -> Vec<glam::Vec2
         .collect()
 }
 
+fn load_image<P: AsRef<Path>>(path: P) -> image::ImageResult<image::Rgb32FImage> { Ok(image::io::Reader::open(path)?.decode()?.into_rgb32f()) }
+
 fn main()
 {
     println!("Loading images...");
-    let env = image::io::Reader::open("images/env/cannon_4k.png").unwrap().decode();
-    if env.is_err()
-    {
-        println!("{:?}", env);
-    }
+    let env = load_image("images/env/cannon_4k.png");
 
     //Materials
     println!("Creating materials...");

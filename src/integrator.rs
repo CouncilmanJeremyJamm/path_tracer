@@ -1,5 +1,5 @@
 use bumpalo::Bump;
-use image::{DynamicImage, GenericImageView, ImageResult};
+use image::{ImageResult, Pixel, Rgb32FImage};
 use nanorand::tls::TlsWyRand;
 use nanorand::Rng;
 use nohash_hasher::IntSet;
@@ -94,7 +94,7 @@ fn estimate_direct(rng: &mut TlsWyRand, bump: &Bump, r: &Ray, hit_info: &HitInfo
     direct
 }
 
-pub(crate) fn integrate(mut r: Ray, scene: &Scene, env: &ImageResult<DynamicImage>, max_bounces: u32) -> glam::Vec3A
+pub(crate) fn integrate(mut r: Ray, scene: &Scene, env: &ImageResult<Rgb32FImage>, max_bounces: u32) -> glam::Vec3A
 {
     let mut rng: TlsWyRand = nanorand::tls_rng();
     let bump: Bump = Bump::new();
@@ -199,10 +199,8 @@ pub(crate) fn integrate(mut r: Ray, scene: &Scene, env: &ImageResult<DynamicImag
         }
         else
         {
-            if env.is_ok()
-            //if false
+            if let Ok(image) = env.as_ref()
             {
-                let image: &DynamicImage = env.as_ref().unwrap();
                 let dimensions: (u32, u32) = image.dimensions();
 
                 let u: f32 = r.direction.x.atan2(r.direction.z).mul_add(std::f32::consts::FRAC_1_PI * 0.5, 0.5);
@@ -221,10 +219,10 @@ pub(crate) fn integrate(mut r: Ray, scene: &Scene, env: &ImageResult<DynamicImag
                 let y_fract: f32 = y.fract();
 
                 //TODO: move bi-linear interpolation into function
-                let c_00: glam::Vec3A = pixel_to_vec3(image.get_pixel(x0, y0));
-                let c_01: glam::Vec3A = pixel_to_vec3(image.get_pixel(x0, y1));
-                let c_10: glam::Vec3A = pixel_to_vec3(image.get_pixel(x1, y0));
-                let c_11: glam::Vec3A = pixel_to_vec3(image.get_pixel(x1, y1));
+                let c_00: glam::Vec3A = remove_gamma(image.get_pixel(x0, y0));
+                let c_01: glam::Vec3A = remove_gamma(image.get_pixel(x0, y1));
+                let c_10: glam::Vec3A = remove_gamma(image.get_pixel(x1, y0));
+                let c_11: glam::Vec3A = remove_gamma(image.get_pixel(x1, y1));
 
                 let colour: glam::Vec3A = (1.0 - x_fract) * (1.0 - y_fract) * c_00
                     + (1.0 - x_fract) * y_fract * c_01
@@ -252,8 +250,6 @@ pub(crate) fn integrate(mut r: Ray, scene: &Scene, env: &ImageResult<DynamicImag
     }
 }
 
-fn u8_to_float(a: u8) -> f32 { ((a as f32) / 255.0).powf(2.2) }
-
 fn f32_to_u8(a: f32) -> u8 { (a.powf(1.0 / 2.2) * 255.0) as u8 }
 
 pub fn map_colour(a: &glam::Vec3A) -> [u8; 3]
@@ -265,4 +261,4 @@ pub fn map_colour(a: &glam::Vec3A) -> [u8; 3]
     ]
 }
 
-fn pixel_to_vec3(p: image::Rgba<u8>) -> glam::Vec3A { glam::Vec3A::new(u8_to_float(p[0]), u8_to_float(p[1]), u8_to_float(p[2])) }
+fn remove_gamma(p: &image::Rgb<f32>) -> glam::Vec3A { glam::Vec3A::from_slice(p.channels()).powf(2.2) }
