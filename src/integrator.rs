@@ -241,32 +241,10 @@ pub(crate) fn integrate(mut r: Ray, scene: &Scene, env: &Result<ImageHelper, Ima
         {
             if let Ok(image) = env.as_ref()
             {
-                let dimensions: glam::UVec2 = image.dimensions;
-
                 let u: f32 = r.direction.x.atan2(r.direction.z).mul_add(std::f32::consts::FRAC_1_PI * 0.5, 0.5);
                 let v: f32 = r.direction.y.asin().mul_add(-std::f32::consts::FRAC_1_PI, 0.5);
 
-                let x: f32 = (dimensions.x as f32) * u;
-                let y: f32 = (dimensions.y as f32) * v;
-
-                let x0: u32 = x as u32;
-                let y0: u32 = y as u32;
-
-                let x_fract: f32 = x.fract();
-                let y_fract: f32 = y.fract();
-
-                //TODO: move bi-linear interpolation into function
-                let c_00: glam::Vec3A = image.get_pixel(x0, y0);
-                let c_01: glam::Vec3A = image.get_pixel(x0, y0 + 1);
-                let c_10: glam::Vec3A = image.get_pixel(x0 + 1, y0);
-                let c_11: glam::Vec3A = image.get_pixel(x0 + 1, y0 + 1);
-
-                let colour: glam::Vec3A = (1.0 - x_fract) * (1.0 - y_fract) * c_00
-                    + (1.0 - x_fract) * y_fract * c_01
-                    + x_fract * (1.0 - y_fract) * c_10
-                    + x_fract * y_fract * c_11;
-
-                accumulated += colour * path_weight;
+                accumulated += image.get_pixel_bilinear(u, v) * path_weight;
             }
             else
             {

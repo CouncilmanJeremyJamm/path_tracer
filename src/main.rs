@@ -30,7 +30,7 @@ mod utility;
 const ASPECT_RATIO: f32 = 1.0;
 const IMAGE_WIDTH: usize = 1000;
 const IMAGE_HEIGHT: usize = ((IMAGE_WIDTH as f32) / ASPECT_RATIO) as usize;
-const SAMPLES_PER_PIXEL: u32 = 256;
+const SAMPLES_PER_PIXEL: u32 = 64;
 const MAX_BOUNCES: u32 = 1024;
 
 const ENABLE_NEE: bool = true;
@@ -64,7 +64,7 @@ fn generate_halton(base_x: u32, base_y: u32, num_samples: u32) -> Vec<glam::Vec2
                 denominator_y *= base_y as f32;
             }
 
-            glam::Vec2::new(x, y)
+            glam::Vec2::new(x, y) - glam::Vec2::splat(0.5)
         })
         .collect()
 }
@@ -85,7 +85,7 @@ fn main()
     let diffuse_blue = Lambertian::new(glam::Vec3A::new(0.05, 0.05, 0.25));
     let ggx_blue = GGX::new_metal(glam::Vec3A::new(0.1, 0.1, 0.45), 0.4);
     let brown_glass_ggx = GGX::new_dielectric(glam::Vec3A::splat(0.95), 0.2, 1.5, Some(volume));
-    let clear_glass_ggx = GGX::new_dielectric(glam::Vec3A::ONE, 0.0, 1.5, Some(volume));
+    let clear_glass_ggx = GGX::new_dielectric(glam::Vec3A::ONE, 0.0, 1.5, None);
     let glass = Dielectric::new(glam::Vec3A::splat(0.95), 1.5, Some(volume));
     let mirror = Specular::new(glam::Vec3A::ONE);
 
