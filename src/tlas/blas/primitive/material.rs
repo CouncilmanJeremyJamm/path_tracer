@@ -68,7 +68,7 @@ pub trait MaterialTrait: Sync + Send
         }
         else
         {
-            glam::Vec3A::dot(glam::Vec3A::normalize(wo), n).abs()
+            glam::Vec3A::dot(wo, n).abs()
         }
     }
 }
