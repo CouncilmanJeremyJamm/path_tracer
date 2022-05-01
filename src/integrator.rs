@@ -140,9 +140,8 @@ fn estimate_direct(rng: &mut TlsWyRand, bump: &Bump, r: &Ray, hit_info: &HitInfo
     estimate_direct_explicit(rng, bump, r, hit_info, mat, scene) + estimate_direct_bsdf(rng, bump, r, hit_info, mat, scene)
 }
 
-pub(crate) fn integrate(mut r: Ray, scene: &Scene, env: &Result<ImageHelper, ImageError>, max_bounces: u32) -> glam::Vec3A
+pub(crate) fn integrate(mut r: Ray, scene: &Scene, env: &Result<ImageHelper, ImageError>, mut rng: &mut TlsWyRand, max_bounces: u32) -> glam::Vec3A
 {
-    let mut rng: TlsWyRand = nanorand::tls_rng();
     let bump: Bump = Bump::new();
 
     let mut accumulated: glam::Vec3A = glam::Vec3A::ZERO;
@@ -176,7 +175,7 @@ pub(crate) fn integrate(mut r: Ray, scene: &Scene, env: &Result<ImageHelper, Ima
             let scattering = volume_stack.iter().filter_map(|v| v.scatter.as_ref());
 
             if let Some((t, dir, _)) = scattering
-                .filter_map(|s| s.scatter(&mut rng, r.direction, hit_info.t))
+                .filter_map(|s| s.scatter(rng, r.direction, hit_info.t))
                 .min_by(|a, b| a.0.total_cmp(&b.0))
             {
                 path_weight *= absorbing.fold(glam::Vec3A::ONE, |w, a| w * a.get_transmission(t));
@@ -216,12 +215,12 @@ pub(crate) fn integrate(mut r: Ray, scene: &Scene, env: &Result<ImageHelper, Ima
 
                 if ENABLE_NEE && !is_delta
                 {
-                    accumulated += path_weight * estimate_direct(&mut rng, &bump, &r, &hit_info, material, scene);
+                    accumulated += path_weight * estimate_direct(rng, &bump, &r, &hit_info, material, scene);
                 }
 
                 r = Ray::new(
                     r.at(hit_info.t),
-                    material.scatter_direction(&mut rng, r.direction, hit_info.normal, hit_info.front_facing),
+                    material.scatter_direction(rng, r.direction, hit_info.normal, hit_info.front_facing),
                 );
 
                 let material_info: BsdfPdf = material.get_bsdf_pdf(wi, r.direction, &hit_info);

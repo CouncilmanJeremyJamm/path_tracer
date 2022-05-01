@@ -2,6 +2,8 @@
 #![feature(allocator_api, array_chunks, bool_to_option)]
 extern crate core;
 
+use nanorand::tls::TlsWyRand;
+use nanorand::Rng;
 use rayon::prelude::*;
 
 use tlas::blas::primitive::material::*;
@@ -11,6 +13,7 @@ use tlas::blas::primitive::Triangle;
 use crate::camera::Camera;
 use crate::image_helper::ImageHelper;
 use crate::ray::Ray;
+use crate::sampling::SobolSampler;
 use crate::scene::Scene;
 use crate::tlas::TLAS;
 use crate::utility::{EPSILON, INFINITY};
@@ -23,6 +26,7 @@ mod camera;
 mod image_helper;
 mod integrator;
 mod ray;
+mod sampling;
 mod scene;
 mod tlas;
 mod utility;
@@ -30,44 +34,12 @@ mod utility;
 const ASPECT_RATIO: f32 = 1.0;
 const IMAGE_WIDTH: usize = 1000;
 const IMAGE_HEIGHT: usize = ((IMAGE_WIDTH as f32) / ASPECT_RATIO) as usize;
+
 const SAMPLES_PER_PIXEL: u32 = 64;
+const NUM_POINTS: usize = SAMPLES_PER_PIXEL as usize * 2;
 const MAX_BOUNCES: u32 = 1024;
 
 const ENABLE_NEE: bool = true;
-
-fn generate_halton(base_x: u32, base_y: u32, num_samples: u32) -> Vec<glam::Vec2>
-{
-    (0..num_samples)
-        .into_par_iter()
-        .map(|i: u32| {
-            // x axis
-            let mut x: f32 = 0.0;
-            let mut denominator_x: f32 = base_x as f32;
-            let mut n_x: u32 = i;
-            while n_x > 0
-            {
-                let multiplier: u32 = n_x % base_x;
-                x += (multiplier as f32) / denominator_x;
-                n_x /= base_x;
-                denominator_x *= base_x as f32;
-            }
-
-            // y axis
-            let mut y: f32 = 0.0;
-            let mut denominator_y: f32 = base_y as f32;
-            let mut n_y: u32 = i;
-            while n_y > 0
-            {
-                let multiplier: u32 = n_y % base_y;
-                y += (multiplier as f32) / denominator_y;
-                n_y /= base_y;
-                denominator_y *= base_y as f32;
-            }
-
-            glam::Vec2::new(x, y) - glam::Vec2::splat(0.5)
-        })
-        .collect()
-}
 
 fn main()
 {
@@ -121,7 +93,7 @@ fn main()
     let cam: Camera = Camera::new(look_from, look_at, up_vector, 40.0, ASPECT_RATIO, 0.0, focal_distance);
 
     //Render
-    let sample_points: Vec<glam::Vec2> = generate_halton(2, 3, SAMPLES_PER_PIXEL);
+    let sobol: SobolSampler<NUM_POINTS> = SobolSampler::generate_sobol();
 
     println!("Starting path-tracing...");
     let render_begin = std::time::Instant::now();
@@ -132,16 +104,23 @@ fn main()
             let x: usize = i % IMAGE_WIDTH;
             let y: usize = IMAGE_HEIGHT - 1 - (i / IMAGE_WIDTH);
 
-            sample_points
-                .iter()
-                .fold(glam::Vec3A::ZERO, |accumulated: glam::Vec3A, offset: &glam::Vec2| {
-                    let u: f32 = (x as f32 + offset.x) / (IMAGE_WIDTH as f32);
-                    let v: f32 = (y as f32 + offset.y) / (IMAGE_HEIGHT as f32);
+            let mut rng: TlsWyRand = nanorand::tls_rng();
+            let mut accumulated: glam::Vec3A = glam::Vec3A::ZERO;
 
-                    let ray: Ray = cam.create_ray(u, v);
-                    accumulated + integrator::integrate(ray, &scene, &env, MAX_BOUNCES)
-                })
-                / (SAMPLES_PER_PIXEL as f32)
+            let seed: u32 = rng.generate();
+
+            for index in 0..SAMPLES_PER_PIXEL
+            {
+                let offset: glam::Vec2 = sobol.get_ss_sobol(index as u32, seed) - glam::Vec2::splat(0.5);
+
+                let u: f32 = (x as f32 + offset.x) / (IMAGE_WIDTH as f32);
+                let v: f32 = (y as f32 + offset.y) / (IMAGE_HEIGHT as f32);
+
+                let ray: Ray = cam.create_ray(u, v);
+                accumulated += integrator::integrate(ray, &scene, &env, &mut rng, MAX_BOUNCES);
+            }
+
+            accumulated / (SAMPLES_PER_PIXEL as f32)
         })
         .collect();
 
