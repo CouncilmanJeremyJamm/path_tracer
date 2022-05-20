@@ -38,8 +38,8 @@ impl<const N: usize> SobolSampler<N>
         sobol.par_iter_mut().enumerate().for_each(|(i, point)| {
             let index: u32 = i as u32;
 
-            let x: u32 = index.reverse_bits() >> 8;
-            let y: u32 = Self::sobol(index) >> 8;
+            let x: u32 = index.reverse_bits();
+            let y: u32 = Self::sobol(index);
 
             *point = glam::UVec2::new(x, y);
         });
@@ -52,11 +52,17 @@ impl<const N: usize> SobolSampler<N>
     /// Credit to: https://psychopath.io/post/2021_01_30_building_a_better_lk_hash
     fn lk_hash(mut x: u32, seed: u32) -> u32
     {
-        x ^= x * 0x3d20adea;
-        x += seed;
-        x *= (seed >> 16) | 1;
-        x ^= x * 0x05526c56;
-        x ^= x * 0x53a22864;
+        // x ^= x * 0x3d20adea;
+        // x += seed;
+        // x *= (seed >> 16) | 1;
+        // x ^= x * 0x05526c56;
+        // x ^= x * 0x53a22864;
+
+        x ^= x.wrapping_mul(0x3d20adea);
+        x = x.wrapping_add(seed);
+        x = x.wrapping_mul(seed.wrapping_shr(16) | 1);
+        x ^= x.wrapping_mul(0x05526c56);
+        x ^= x.wrapping_mul(0x53a22864);
 
         x
     }
@@ -69,11 +75,17 @@ impl<const N: usize> SobolSampler<N>
     /// Credit to: https://github.com/skeeto/hash-prospector
     fn low_bias_hash(mut x: u32) -> u32
     {
-        x ^= x >> 16;
-        x *= 0x21f0aaad;
-        x ^= x >> 15;
-        x *= 0xd35a2d97;
-        x ^= x >> 15;
+        // x ^= x >> 16;
+        // x *= 0x21f0aaad;
+        // x ^= x >> 15;
+        // x *= 0xd35a2d97;
+        // x ^= x >> 15;
+
+        x ^= x.wrapping_shr(16);
+        x = x.wrapping_mul(0x21f0aaad);
+        x ^= x.wrapping_shr(15);
+        x = x.wrapping_mul(0xd35a2d97);
+        x ^= x.wrapping_shr(15);
 
         x
     }
@@ -94,6 +106,10 @@ impl<const N: usize> SobolSampler<N>
         let x: u32 = Self::scramble_base2(sobol_pt.x, x_seed);
         let y: u32 = Self::scramble_base2(sobol_pt.y, y_seed);
 
-        glam::Vec2::new(x as f32, y as f32) / (u32::MAX as f32)
+        let p: glam::Vec2 = glam::Vec2::new(x as f32, y as f32) / (u32::MAX as f32);
+        debug_assert!((0.0..=1.0).contains(&p.x));
+        debug_assert!((0.0..=1.0).contains(&p.y));
+
+        p
     }
 }
