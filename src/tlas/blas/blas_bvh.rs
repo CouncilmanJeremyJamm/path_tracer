@@ -9,7 +9,7 @@ pub mod boundingbox;
 const DESIRED_BINS: usize = 64;
 
 const TRAVERSAL_COST: f32 = 1.0;
-const INTERSECTION_COST: f32 = 10.0;
+const INTERSECTION_COST: f32 = 2.0;
 
 pub(crate) struct PrimitiveInfo
 {

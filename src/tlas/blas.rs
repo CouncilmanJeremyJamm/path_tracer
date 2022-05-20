@@ -105,7 +105,7 @@ pub fn load_obj(path: &std::path::Path) -> Vec<Vertex>
     vertices
 }
 
-pub fn push_to_stack<'a, 'b, N>(r: &Ray, t_max: f32, stack: &'b mut std::vec::Vec<(&'a N, f32), &bumpalo::Bump>, left: &'a N, right: &'a N)
+pub fn push_to_stack<'a, 'b, N>(r: &Ray, t_max: f32, stack: &'b mut Vec<(&'a N, f32), &Bump>, left: &'a N, right: &'a N)
 where
     N: HasBox,
 {
@@ -209,14 +209,13 @@ impl<'a> BLAS<'a>
                 }
                 BLASNodeType::Leaf { primitive_indices } =>
                 {
-                    if let Some(intersection) = primitive_indices
-                        .iter()
-                        .filter_map(|i| self.primitives[*i as usize].intersect(r, t_max, t_enter).zip(Some(*i)))
-                        .min_by(|a, b| a.0.t.total_cmp(&b.0.t))
+                    for i in primitive_indices.as_ref()
                     {
-                        t_max = intersection.0.t;
-                        closest = Some(intersection);
-                        //println!("{} {}", t_enter, t_max);
+                        if let Some(intersection) = self.primitives[*i as usize].intersect(r, t_max, t_enter)
+                        {
+                            t_max = intersection.t;
+                            closest = Some((intersection, *i));
+                        }
                     }
                 }
             }
