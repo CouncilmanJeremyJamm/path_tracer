@@ -1,5 +1,5 @@
 #![allow(clippy::upper_case_acronyms, clippy::new_ret_no_self)]
-#![feature(allocator_api, array_chunks, bool_to_option)]
+#![feature(allocator_api, array_chunks)]
 extern crate core;
 
 use nanorand::tls::TlsWyRand;
