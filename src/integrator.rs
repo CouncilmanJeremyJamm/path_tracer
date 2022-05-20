@@ -140,7 +140,7 @@ fn estimate_direct(rng: &mut TlsWyRand, bump: &Bump, r: &Ray, hit_info: &HitInfo
     estimate_direct_explicit(rng, bump, r, hit_info, mat, scene) + estimate_direct_bsdf(rng, bump, r, hit_info, mat, scene)
 }
 
-pub(crate) fn integrate(mut r: Ray, scene: &Scene, env: &Result<ImageHelper, ImageError>, mut rng: &mut TlsWyRand, max_bounces: u32) -> glam::Vec3A
+pub(crate) fn integrate(mut r: Ray, scene: &Scene, env: &Result<ImageHelper, ImageError>, rng: &mut TlsWyRand, max_bounces: u32) -> glam::Vec3A
 {
     let bump: Bump = Bump::new();
 
