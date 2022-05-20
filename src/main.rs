@@ -1,5 +1,6 @@
 #![allow(clippy::upper_case_acronyms, clippy::new_ret_no_self)]
 #![feature(allocator_api, array_chunks)]
+#![feature(box_into_inner)]
 extern crate core;
 
 use nanorand::tls::TlsWyRand;
@@ -35,7 +36,7 @@ const ASPECT_RATIO: f32 = 1.0;
 const IMAGE_WIDTH: usize = 1000;
 const IMAGE_HEIGHT: usize = ((IMAGE_WIDTH as f32) / ASPECT_RATIO) as usize;
 
-const SAMPLES_PER_PIXEL: u32 = 64;
+const SAMPLES_PER_PIXEL: u32 = 256;
 const NUM_POINTS: usize = SAMPLES_PER_PIXEL as usize * 2;
 const MAX_BOUNCES: u32 = 1024;
 

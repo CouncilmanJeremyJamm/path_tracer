@@ -1,7 +1,6 @@
-use std::cmp::Ordering;
-
 use crate::tlas::blas::blas_bvh::boundingbox::{surrounding_box, AABB};
 use crate::tlas::blas::blas_bvh::HasBox;
+use crate::INFINITY;
 
 pub(super) struct BLASInfo
 {
@@ -12,12 +11,6 @@ pub(super) struct BLASInfo
 impl BLASInfo
 {
     pub fn new(bounding_box: AABB, blas_index: u8) -> Self { Self { bounding_box, blas_index } }
-    pub fn create_bounding_box(object_info: &[Self]) -> AABB
-    {
-        object_info
-            .iter()
-            .fold(AABB::identity(), |a: AABB, b: &BLASInfo| surrounding_box(&a, &b.bounding_box))
-    }
 }
 
 pub(super) enum TLASNodeType
@@ -45,38 +38,76 @@ impl HasBox for TLASNode
 
 impl TLASNode
 {
-    pub fn generate_tlas(blas_info: &mut [BLASInfo]) -> Self
+    fn find_best_match(nodes: &[Box<TLASNode>], a_index: usize) -> usize
     {
-        let blas_span: usize = blas_info.len();
-        debug_assert!(blas_span > 0);
+        let a: &AABB = &nodes[a_index].bounding_box;
 
-        if blas_span == 1
+        let mut best_sa: f32 = INFINITY;
+        let mut best_index: usize = usize::MAX;
+
+        for i in 0..nodes.len()
         {
-            Self {
-                bounding_box: blas_info[0].bounding_box,
-                node_type: TLASNodeType::Leaf {
-                    blas_index: blas_info[0].blas_index,
-                },
+            if i == a_index
+            {
+                continue;
+            }
+
+            let b: &AABB = &nodes[i].bounding_box;
+
+            let bounding_box: AABB = surrounding_box(a, b);
+            let sa: f32 = bounding_box.surface_area();
+
+            if sa < best_sa
+            {
+                best_index = i;
+                best_sa = sa;
             }
         }
-        else
+
+        best_index
+    }
+
+    pub fn generate_tlas(blas_info: &[BLASInfo]) -> Self
+    {
+        let mut nodes = blas_info
+            .iter()
+            .map(|i| {
+                let node = Self {
+                    bounding_box: i.bounding_box,
+                    node_type: TLASNodeType::Leaf { blas_index: i.blas_index },
+                };
+
+                Box::new(node)
+            })
+            .collect::<Vec<_>>();
+
+        let mut a: usize = 0;
+        let mut b: usize = Self::find_best_match(&nodes, a);
+
+        while nodes.len() > 1
         {
-            let bounding_box: AABB = BLASInfo::create_bounding_box(blas_info);
+            let c: usize = Self::find_best_match(&nodes, b);
+            if a == c
+            {
+                let node_a = nodes.swap_remove(a);
+                let node_b = nodes.swap_remove(b);
 
-            //Find longest axis
-            let split_axis: u8 = bounding_box.longest_axis();
+                let new_node = Box::new(Self {
+                    bounding_box: surrounding_box(&node_a.bounding_box, &node_b.bounding_box),
+                    node_type: TLASNodeType::Branch { left: node_a, right: node_b },
+                });
 
-            let comparator = |a: &BLASInfo, b: &BLASInfo| -> Ordering { a.bounding_box.compare(&b.bounding_box, split_axis) };
-            blas_info.sort_unstable_by(comparator);
-
-            let (left_info, right_info): (&mut [BLASInfo], &mut [BLASInfo]) = blas_info.split_at_mut(blas_span / 2);
-            let (left, right): (Box<TLASNode>, Box<TLASNode>) =
-                rayon::join(|| Box::new(Self::generate_tlas(left_info)), || Box::new(Self::generate_tlas(right_info)));
-
-            Self {
-                bounding_box,
-                node_type: TLASNodeType::Branch { left, right },
+                a = nodes.len();
+                nodes.push(new_node);
+                b = Self::find_best_match(&nodes, a);
+            }
+            else
+            {
+                a = b;
+                b = c;
             }
         }
+
+        Box::into_inner(nodes.remove(0))
     }
 }
