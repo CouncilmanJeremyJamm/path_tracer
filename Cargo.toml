@@ -14,12 +14,12 @@ inherits = "release"
 debug = true
 
 [dependencies.image]
-version = "0.24.1"
+version = "0.24.2"
 default-features = false
 features = ["jpeg", "png"]
 
 [dependencies.mimalloc]
-version = "0.1.28"
+version = "0.1.29"
 default-features = false
 
 [dependencies.nanorand]
@@ -32,4 +32,4 @@ bumpalo = { version = "3.9.1", features = ["allocator_api"] }
 enum_dispatch = "0.3.8"
 glam = { version = "0.20.5", features = ["fast-math"] }
 nohash-hasher = "0.2.0"
-rayon = "1.5.2"
+rayon = "1.5.3"
