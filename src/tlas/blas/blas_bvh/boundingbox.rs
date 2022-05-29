@@ -33,6 +33,14 @@ impl AABB
         }
     }
 
+    pub fn transform(&self, matrix: &glam::Affine3A) -> Self
+    {
+        let a: glam::Vec3A = matrix.transform_point3a(self.minimum);
+        let b: glam::Vec3A = matrix.transform_point3a(self.maximum);
+
+        Self::new(glam::Vec3A::min(a, b), glam::Vec3A::max(a, b))
+    }
+
     pub fn identity() -> Self
     {
         Self {

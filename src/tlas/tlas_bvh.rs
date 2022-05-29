@@ -6,18 +6,28 @@ pub(super) struct BLASInfo
 {
     bounding_box: AABB,
     blas_index: u8,
+    matrices: Vec<glam::Affine3A>,
 }
 
 impl BLASInfo
 {
-    pub fn new(bounding_box: AABB, blas_index: u8) -> Self { Self { bounding_box, blas_index } }
+    pub fn new(bounding_box: AABB, blas_index: u8, matrices: Vec<glam::Affine3A>) -> Self
+    {
+        Self {
+            bounding_box,
+            blas_index,
+            matrices,
+        }
+    }
 }
 
 pub(super) enum TLASNodeType
 {
     Leaf
     {
-        blas_index: u8
+        blas_index: u8,
+        matrix: glam::Affine3A,
+        inv_matrix: glam::Affine3A,
     },
     Branch
     {
@@ -71,13 +81,20 @@ impl TLASNode
     {
         let mut nodes = blas_info
             .iter()
-            .map(|i| {
-                let node = Self {
-                    bounding_box: i.bounding_box,
-                    node_type: TLASNodeType::Leaf { blas_index: i.blas_index },
-                };
+            .flat_map(|info| {
+                info.matrices.iter().map(|&matrix| {
+                    let bb = info.bounding_box.transform(&matrix);
+                    let node = Self {
+                        bounding_box: bb,
+                        node_type: TLASNodeType::Leaf {
+                            blas_index: info.blas_index,
+                            matrix,
+                            inv_matrix: matrix.inverse(),
+                        },
+                    };
 
-                Box::new(node)
+                    Box::new(node)
+                })
             })
             .collect::<Vec<_>>();
 

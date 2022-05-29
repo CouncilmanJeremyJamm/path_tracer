@@ -1,7 +1,7 @@
 use std::time::Instant;
 
 use bumpalo::Bump;
-use rayon::prelude::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use rayon::prelude::{IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 
 use tlas_bvh::{BLASInfo, TLASNode, TLASNodeType};
 
@@ -29,7 +29,8 @@ impl<'a> TLAS<'a>
         let mut blas_info: Vec<BLASInfo> = blas_vec
             .par_iter()
             .enumerate()
-            .map(|tuple: (usize, &BLAS)| -> BLASInfo { BLASInfo::new(tuple.1.bvh.bounding_box, tuple.0 as u8) })
+            .zip_eq(models.into_par_iter())
+            .map(|(tuple, model): ((usize, &BLAS), Model)| -> BLASInfo { BLASInfo::new(tuple.1.bvh.bounding_box, tuple.0 as u8, model.matrices) })
             .collect();
 
         let bvh: TLASNode = TLASNode::generate_tlas(blas_info.as_mut_slice());
@@ -73,13 +74,26 @@ impl<'a> TLAS<'a>
             match &current.node_type
             {
                 TLASNodeType::Branch { left, right } => push_to_stack(r, t_max, &mut stack, left, right),
-                TLASNodeType::Leaf { blas_index } =>
+                TLASNodeType::Leaf {
+                    blas_index,
+                    matrix,
+                    inv_matrix,
+                } =>
                 {
+                    let ray: Ray = r.transform(inv_matrix);
+
                     let blas: &BLAS = &self.blas_vec[*blas_index as usize];
-                    if let Some((hit_info, triangle, material)) = blas.intersect(bump, r, t_max)
+                    if let Some((hit_info, triangle, material)) = blas.intersect(bump, &ray, t_max)
                     {
                         t_max = hit_info.t;
-                        closest = Some((hit_info, triangle, material));
+                        closest = Some((
+                            HitInfo {
+                                normal: matrix.transform_vector3a(hit_info.normal),
+                                ..hit_info
+                            },
+                            triangle,
+                            material,
+                        ));
                     }
                 }
             }
@@ -106,9 +120,11 @@ impl<'a> TLAS<'a>
                     stack.push(left);
                     stack.push(right);
                 }
-                TLASNodeType::Leaf { blas_index } =>
+                TLASNodeType::Leaf { blas_index, inv_matrix, .. } =>
                 {
-                    if self.blas_vec[*blas_index as usize].any_intersect(bump, r, t_max)
+                    let ray: Ray = r.transform(inv_matrix);
+
+                    if self.blas_vec[*blas_index as usize].any_intersect(bump, &ray, t_max)
                     {
                         return true;
                     }

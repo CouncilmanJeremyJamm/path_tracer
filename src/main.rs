@@ -36,7 +36,7 @@ const ASPECT_RATIO: f32 = 1.0;
 const IMAGE_WIDTH: usize = 1000;
 const IMAGE_HEIGHT: usize = ((IMAGE_WIDTH as f32) / ASPECT_RATIO) as usize;
 
-const SAMPLES_PER_PIXEL: u32 = 256;
+const SAMPLES_PER_PIXEL: u32 = 1024;
 const NUM_POINTS: usize = SAMPLES_PER_PIXEL as usize * 2;
 const MAX_BOUNCES: u32 = 1024;
 
@@ -68,17 +68,24 @@ fn main()
     //Models and BVHs
     println!("Loading models, building BVHs...\n");
 
+    let rotation: glam::Quat = glam::Quat::from_rotation_y(std::f32::consts::PI);
+    let translation: glam::Vec3 = glam::Vec3::new(0.0, 200.0, 0.0);
+
     let models: Vec<Model> = vec![
-        Model::new("models/cornell/cb_light.obj", &light),
-        Model::new("models/cornell/cb_main.obj", &diffuse_gray),
-        Model::new("models/cornell/cb_right.obj", &diffuse_red),
-        Model::new("models/cornell/cb_left.obj", &diffuse_green),
-        // //Model::new("models/cornell/cb_box_tall.obj", &diffuse_gray),
-        // //Model::new("models/cornell/cb_box_short.obj", &diffuse_gray),
-        // //Model::new("models/sphere_offset.obj", &glass),
-        Model::new("models/zenobia.obj", &ggx_blue),
-        Model::new("models/cornell/dragon.obj", &brown_glass_ggx),
-        // Model::new("models/sphere.obj", &clear_glass_ggx),
+        Model::new("models/cornell/cb_light.obj", &light, vec![glam::Affine3A::IDENTITY]),
+        Model::new("models/cornell/cb_main.obj", &diffuse_gray, vec![glam::Affine3A::IDENTITY]),
+        Model::new("models/cornell/cb_right.obj", &diffuse_red, vec![glam::Affine3A::IDENTITY]),
+        Model::new("models/cornell/cb_left.obj", &diffuse_green, vec![glam::Affine3A::IDENTITY]),
+        // //Model::new("models/cornell/cb_box_tall.obj", &diffuse_gray, vec!(glam::Affine3A::IDENTITY)),
+        // //Model::new("models/cornell/cb_box_short.obj", &diffuse_gray, vec!(glam::Affine3A::IDENTITY)),
+        // //Model::new("models/sphere_offset.obj", &glass, vec!(glam::Affine3A::IDENTITY)),
+        Model::new("models/zenobia.obj", &ggx_blue, vec![glam::Affine3A::IDENTITY]),
+        Model::new(
+            "models/cornell/dragon.obj",
+            &brown_glass_ggx,
+            vec![glam::Affine3A::IDENTITY, glam::Affine3A::from_rotation_translation(rotation, translation)],
+        ),
+        // Model::new("models/sphere.obj", &clear_glass_ggx, vec!(glam::Affine3A::IDENTITY)),
     ];
 
     let scene: Scene = Scene::new(models);
