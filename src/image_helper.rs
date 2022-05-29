@@ -1,7 +1,12 @@
 use std::path::Path;
 
+use glam::const_mat3a;
 use image::ImageError;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
+
+use crate::image_helper::tonemapping::gt_tonemap_vector;
+
+mod tonemapping;
 
 /// Helper struct for loading/writing images.
 ///
@@ -36,9 +41,10 @@ impl ImageHelper
         let data: Vec<u8> = self
             .data
             .par_iter()
-            .flat_map_iter(|a| {
-                let fvec = a.clamp(glam::Vec3A::ZERO, glam::Vec3A::ONE).powf(1.0 / 2.2) * 255.0;
-                [fvec.x as u8, fvec.y as u8, fvec.z as u8]
+            .flat_map_iter(|&a| {
+                let out: glam::Vec3A = gt_tonemap_vector(a, 1.0, 1.0, 0.22, 0.4, 1.33, 0.0).powf(1.0 / 2.2) * 255.0;
+
+                [out.x as u8, out.y as u8, out.z as u8]
             })
             .collect();
 
