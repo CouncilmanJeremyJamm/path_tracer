@@ -79,7 +79,7 @@ impl TLASNode
 
     pub fn generate_tlas(blas_info: &[BLASInfo]) -> Self
     {
-        let mut nodes = blas_info
+        let mut nodes: Vec<Box<TLASNode>> = blas_info
             .iter()
             .flat_map(|info| {
                 info.matrices.iter().map(|&matrix| {
@@ -106,12 +106,18 @@ impl TLASNode
             let c: usize = Self::find_best_match(&nodes, b);
             if a == c
             {
-                let node_a = nodes.swap_remove(a);
-                let node_b = nodes.swap_remove(b);
+                let (node_1, node_2): (Box<TLASNode>, Box<TLASNode>) = if a > b
+                {
+                    (nodes.swap_remove(a), nodes.swap_remove(b))
+                }
+                else
+                {
+                    (nodes.swap_remove(b), nodes.swap_remove(a))
+                };
 
-                let new_node = Box::new(Self {
-                    bounding_box: surrounding_box(&node_a.bounding_box, &node_b.bounding_box),
-                    node_type: TLASNodeType::Branch { left: node_a, right: node_b },
+                let new_node: Box<TLASNode> = Box::new(Self {
+                    bounding_box: surrounding_box(&node_1.bounding_box, &node_2.bounding_box),
+                    node_type: TLASNodeType::Branch { left: node_1, right: node_2 },
                 });
 
                 a = nodes.len();

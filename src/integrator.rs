@@ -140,7 +140,7 @@ fn estimate_direct(rng: &mut TlsWyRand, bump: &Bump, r: &Ray, hit_info: &HitInfo
     estimate_direct_explicit(rng, bump, r, hit_info, mat, scene) + estimate_direct_bsdf(rng, bump, r, hit_info, mat, scene)
 }
 
-pub(crate) fn integrate(mut r: Ray, scene: &Scene, env: &Result<ImageHelper, ImageError>, rng: &mut TlsWyRand, max_bounces: u32) -> glam::Vec3A
+pub(crate) fn integrate(mut r: Ray, scene: &Scene, env: &Result<ImageHelper, ImageError>, rng: &mut TlsWyRand, max_bounces: u32) -> glam::Vec4
 {
     let bump: Bump = Bump::new();
 
@@ -193,7 +193,7 @@ pub(crate) fn integrate(mut r: Ray, scene: &Scene, env: &Result<ImageHelper, Ima
             {
                 if !ENABLE_NEE || last_delta || b == 0
                 {
-                    accumulated += material.get_emitted() * path_weight;
+                    accumulated = material.get_emitted().mul_add(path_weight, accumulated);
                 }
                 break 'trace_ray;
             }
@@ -256,10 +256,11 @@ pub(crate) fn integrate(mut r: Ray, scene: &Scene, env: &Result<ImageHelper, Ima
 
     if accumulated.is_finite()
     {
-        accumulated
+        accumulated.clamp_length_max(100.0).extend(1.0)
+        // accumulated.extend(1.0)
     }
     else
     {
-        glam::Vec3A::ZERO
+        glam::Vec4::W
     }
 }

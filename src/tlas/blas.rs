@@ -8,8 +8,8 @@ use rayon::prelude::{IndexedParallelIterator, IntoParallelRefIterator, ParallelI
 use primitive::model::{Model, Vertex, VertexRef};
 use primitive::Triangle;
 
-use crate::tlas::blas::blas_bvh::{BLASNode, BLASNodeType, HasBox, PrimitiveInfo};
 use crate::{HitInfo, Material, MaterialTrait, Ray};
+use crate::tlas::blas::blas_bvh::{BLASNode, BLASNodeType, HasBox, PrimitiveInfo};
 
 pub mod blas_bvh;
 pub mod primitive;
@@ -135,16 +135,16 @@ where
     }
 }
 
-pub(crate) struct BLAS<'a>
+pub(crate) struct BLAS
 {
     pub primitives: Vec<Triangle>,
-    pub material: &'a Material,
+    pub material: Material,
     pub bvh: BLASNode,
 }
 
-impl<'a> BLAS<'a>
+impl<'a> BLAS
 {
-    pub fn new(model: &Model<'a>) -> Self
+    pub fn new(model: Model<'a>) -> Self
     {
         let timer: Instant = Instant::now();
 
@@ -221,7 +221,7 @@ impl<'a> BLAS<'a>
             }
         }
 
-        closest.map(|(intersection, primitive_index)| (intersection, &self.primitives[primitive_index as usize], self.material))
+        closest.map(|(intersection, primitive_index)| (intersection, &self.primitives[primitive_index as usize], &self.material))
     }
     pub fn any_intersect(&self, bump: &Bump, r: &Ray, t_max: f32) -> bool
     {

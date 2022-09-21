@@ -27,13 +27,13 @@ pub struct VertexRef
 pub struct Model<'c>
 {
     pub file_path: &'c Path,
-    pub material: &'c Material,
+    pub material: Material,
     pub matrices: Vec<glam::Affine3A>,
 }
 
 impl<'c> Model<'c>
 {
-    pub fn new<P>(file_path: &'c P, material: &'c Material, matrices: Vec<glam::Affine3A>) -> Self
+    pub fn new<P>(file_path: &'c P, material: Material, matrices: Vec<glam::Affine3A>) -> Self
     where
         P: ?Sized + AsRef<Path>,
     {

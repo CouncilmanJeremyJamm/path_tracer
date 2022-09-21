@@ -74,6 +74,7 @@ pub trait MaterialTrait: Sync + Send
 }
 
 #[enum_dispatch(MaterialTrait)]
+#[derive(Clone)]
 pub enum Material
 {
     Lambertian,
@@ -83,6 +84,7 @@ pub enum Material
     Dielectric,
 }
 
+#[derive(Clone)]
 pub struct Lambertian
 {
     albedo: glam::Vec3A,
@@ -109,6 +111,7 @@ impl MaterialTrait for Lambertian
     }
 }
 
+#[derive(Clone)]
 pub struct Emissive
 {
     emitted: glam::Vec3A,
@@ -127,6 +130,7 @@ impl MaterialTrait for Emissive
     fn is_emissive(&self) -> bool { true }
 }
 
+#[derive(Clone)]
 pub struct Specular
 {
     colour: glam::Vec3A,
@@ -147,6 +151,8 @@ impl MaterialTrait for Specular
 }
 
 /// Implementation of GGX model based on *Microfacet Models for Refraction through Rough Surfaces*
+
+#[derive(Clone)]
 pub struct GGX
 {
     /// Surface colour
@@ -160,6 +166,8 @@ pub struct GGX
 /// The `GGXModel` enum allows the `GGX` struct to implement two separate models:
 /// * `REFLECTIVE` - metals. Only reflection is enabled
 /// * `TRANSMISSIVE` - dielectrics. Both reflection and refraction is enabled
+
+#[derive(Clone)]
 enum GGXModel
 {
     REFLECTIVE,
@@ -188,7 +196,8 @@ impl GGX
     }
 
     /// Schlick's approximation to the fresnel term
-    fn f(&self, v_dot_h: f32, f0: f32) -> f32 { f0 + ((1.0 - f0) * (1.0 - v_dot_h).powi(5)) }
+    // fn f(&self, v_dot_h: f32, f0: f32) -> f32 { f0 + ((1.0 - f0) * (1.0 - v_dot_h).powi(5)) }
+    fn f(&self, v_dot_h: f32, f0: f32) -> f32 { (1.0 - v_dot_h).powi(5).mul_add(1.0 - f0, f0) }
     /// Schlick's approximation to the fresnel term, used to tint the reflection for the `REFLECTIVE` model
     fn f_vector(&self, v_dot_h: f32, f0: glam::Vec3A) -> glam::Vec3A { f0 + ((1.0 - f0) * (1.0 - v_dot_h).powi(5)) }
 
@@ -200,8 +209,9 @@ impl GGX
             return 0.0;
         }
 
-        let n_dot_v_sq: f32 = v.z * v.z;
-        let tan_squared: f32 = (1.0 - n_dot_v_sq) / n_dot_v_sq;
+        // let n_dot_v_sq: f32 = v.z * v.z;
+        // let tan_squared: f32 = (1.0 - n_dot_v_sq) / n_dot_v_sq;
+        let tan_squared: f32 = v.z.powi(-2) - 1.0;
         2.0 / (1.0 + (1.0 + self.a * self.a * tan_squared).sqrt())
     }
 
@@ -220,8 +230,10 @@ impl GGX
 
         let x: f32 = 2.0 * wi.z * wo.z;
         let y: f32 = 1.0 - a_squared;
-        let z: f32 = wo.z * (a_squared + (y * wi.z * wi.z)).sqrt();
-        let w: f32 = wi.z * (a_squared + (y * wo.z * wo.z)).sqrt();
+        // let z: f32 = wo.z * (a_squared + (y * wi.z * wi.z)).sqrt();
+        // let w: f32 = wi.z * (a_squared + (y * wo.z * wo.z)).sqrt();
+        let z: f32 = wo.z * f32::hypot(self.a, wi.z * y.sqrt());
+        let w: f32 = wi.z * f32::hypot(self.a, wo.z * y.sqrt());
 
         x / (z + w)
     }
@@ -445,6 +457,8 @@ impl MaterialTrait for GGX
 }
 
 //TODO: fix fresnel in dielectric
+
+#[derive(Clone)]
 pub struct Dielectric
 {
     colour: glam::Vec3A,
@@ -466,7 +480,8 @@ impl Dielectric
         else
         {
             let f0: f32 = ((eta - 1.0) / (eta + 1.0)).powi(2);
-            f0 + ((1.0 - f0) * (1.0 - cosine).powi(5))
+            // f0 + ((1.0 - f0) * (1.0 - cosine).powi(5))
+            (1.0 - cosine).powi(5).mul_add(1.0 - f0, f0)
         }
     }
 }

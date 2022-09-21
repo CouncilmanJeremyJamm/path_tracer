@@ -12,25 +12,29 @@ use crate::{HitInfo, Material, Model, Ray, Triangle};
 pub mod blas;
 mod tlas_bvh;
 
-pub(crate) struct TLAS<'a>
+pub(crate) struct TLAS
 {
-    pub blas_vec: Vec<BLAS<'a>>,
+    pub blas_vec: Vec<BLAS>,
     bvh: TLASNode,
 }
 
-impl<'a> TLAS<'a>
+impl<'a> TLAS
 {
     pub fn new(models: Vec<Model<'a>>) -> Self
     {
         let timer: Instant = Instant::now();
 
-        let blas_vec: Vec<BLAS<'a>> = models.par_iter().map(BLAS::new).collect();
+        let matrices_vec: Vec<Vec<glam::Affine3A>> = models.iter().map(|m| m.matrices.clone()).collect();
+
+        let blas_vec: Vec<BLAS> = models.into_par_iter().map(BLAS::new).collect();
 
         let mut blas_info: Vec<BLASInfo> = blas_vec
             .par_iter()
             .enumerate()
-            .zip_eq(models.into_par_iter())
-            .map(|(tuple, model): ((usize, &BLAS), Model)| -> BLASInfo { BLASInfo::new(tuple.1.bvh.bounding_box, tuple.0 as u8, model.matrices) })
+            .zip_eq(matrices_vec.into_par_iter())
+            .map(|(tuple, matrices): ((usize, &BLAS), Vec<glam::Affine3A>)| -> BLASInfo {
+                BLASInfo::new(tuple.1.bvh.bounding_box, tuple.0 as u8, matrices)
+            })
             .collect();
 
         let bvh: TLASNode = TLASNode::generate_tlas(blas_info.as_mut_slice());
@@ -62,7 +66,7 @@ impl<'a> TLAS<'a>
         let mut stack: Vec<(&TLASNode, f32), _> = Vec::with_capacity_in(1, bump);
         stack.push((&self.bvh, 0.0));
 
-        let mut closest: Option<(HitInfo, &Triangle, &Material)> = None;
+        let mut closest: Option<(HitInfo, &glam::Affine3A, &Triangle, &Material)> = None;
 
         while let Some((current, t_enter)) = stack.pop()
         {
@@ -86,20 +90,24 @@ impl<'a> TLAS<'a>
                     if let Some((hit_info, triangle, material)) = blas.intersect(bump, &ray, t_max)
                     {
                         t_max = hit_info.t;
-                        closest = Some((
-                            HitInfo {
-                                normal: matrix.transform_vector3a(hit_info.normal),
-                                ..hit_info
-                            },
-                            triangle,
-                            material,
-                        ));
+                        // Defer transform of normal until the end
+                        closest = Some((hit_info, matrix, triangle, material));
                     }
                 }
             }
         }
 
-        closest
+        closest.map(|(hit_info, matrix, primitive, material)| {
+            (
+                HitInfo {
+                    // Transform the recorded normal using the transformation matrix from the parent instance
+                    normal: matrix.transform_vector3a(hit_info.normal),
+                    ..hit_info
+                },
+                primitive,
+                material,
+            )
+        })
     }
     pub fn any_intersect(&self, bump: &Bump, r: &Ray, t_max: f32) -> bool
     {

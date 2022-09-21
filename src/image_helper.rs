@@ -1,6 +1,5 @@
 use std::path::Path;
 
-use glam::const_mat3a;
 use image::ImageError;
 use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 

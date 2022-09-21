@@ -8,14 +8,14 @@ use crate::{Material, Model, Triangle, TLAS};
 
 pub mod light_sampler;
 
-pub(crate) struct Scene<'a>
+pub(crate) struct Scene
 {
-    pub world: TLAS<'a>,
-    pub lights: TLAS<'a>,
+    pub world: TLAS,
+    pub lights: TLAS,
     pub light_sampler: LightSampler,
 }
 
-impl<'a> Scene<'a>
+impl<'a> Scene
 {
     pub fn new(models: Vec<Model<'a>>) -> Self
     {
@@ -40,6 +40,6 @@ impl<'a> Scene<'a>
         let blas = &self.lights.blas_vec[light_item.blas_index as usize];
         let primitive = &blas.primitives[light_item.primitive_index as usize];
 
-        (blas.material, primitive, light_item.pdf)
+        (&blas.material, primitive, light_item.pdf)
     }
 }
