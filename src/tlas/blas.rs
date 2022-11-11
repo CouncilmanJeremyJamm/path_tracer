@@ -8,8 +8,8 @@ use rayon::prelude::{IndexedParallelIterator, IntoParallelRefIterator, ParallelI
 use primitive::model::{Model, Vertex, VertexRef};
 use primitive::Triangle;
 
-use crate::{HitInfo, Material, MaterialTrait, Ray};
 use crate::tlas::blas::blas_bvh::{BLASNode, BLASNodeType, HasBox, PrimitiveInfo};
+use crate::{HitInfo, Material, MaterialTrait, Ray};
 
 pub mod blas_bvh;
 pub mod primitive;
@@ -114,6 +114,7 @@ where
 
     if let (Some(t_enter_left), Some(t_enter_right)) = (intersect_left, intersect_right)
     {
+        stack.reserve(2);
         if t_enter_left < t_enter_right
         {
             stack.push((right, t_enter_right));
@@ -182,7 +183,7 @@ impl<'a> BLAS
 
     pub fn intersect(&self, bump: &Bump, r: &Ray, mut t_max: f32) -> Option<(HitInfo, &Triangle, &Material)>
     {
-        let mut stack: Vec<(&BLASNode, f32), _> = Vec::with_capacity_in(1, bump);
+        let mut stack: Vec<(&BLASNode, f32), _> = Vec::new_in(bump);
         stack.push((&self.bvh, 0.0));
         let mut closest: Option<(HitInfo, u32)> = None;
 
@@ -225,7 +226,7 @@ impl<'a> BLAS
     }
     pub fn any_intersect(&self, bump: &Bump, r: &Ray, t_max: f32) -> bool
     {
-        let mut stack: Vec<&BLASNode, _> = Vec::with_capacity_in(1, bump);
+        let mut stack: Vec<&BLASNode, _> = Vec::new_in(bump);
         stack.push(&self.bvh);
 
         while let Some(current) = stack.pop()
@@ -236,6 +237,7 @@ impl<'a> BLAS
                 {
                     BLASNodeType::Branch { left, right } =>
                     {
+                        stack.reserve(2);
                         stack.push(left);
                         stack.push(right);
                     }

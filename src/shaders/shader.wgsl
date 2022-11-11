@@ -33,13 +33,6 @@ fn gt_tonemap(x: vec3<f32>, p: f32, a: f32, m: f32, l: f32, c: f32, b: f32) -> v
 }
 // ---------------------
 
-struct PushConstants
-{
-    num_samples: f32,
-}
-
-var<push_constant> push_constants: PushConstants;
-
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) uv: vec2<f32>,
@@ -52,7 +45,7 @@ fn vs_main(@builtin(vertex_index) v_index: u32) -> VertexOutput
 
     var vert_out: VertexOutput;
 
-    vert_out.uv = vec2<f32>(uv.x, 1.0 - uv.y);
+    vert_out.uv = uv;
     vert_out.position = vec4<f32>(uv * 2.0 - 1.0, 0.0, 1.0);
 
     return vert_out;
@@ -60,12 +53,12 @@ fn vs_main(@builtin(vertex_index) v_index: u32) -> VertexOutput
 
 // Fragment Shader
 @group(0) @binding(0) var t_diffuse: texture_2d<f32>;
-@group(0) @binding(1) var s_diffuse: sampler;
+@group(0) @binding(1) var t_sampler: sampler;
 
 @fragment
 fn fs_main(frag_in: VertexOutput) -> @location(0) vec4<f32>
 {
-    var texture_sample: vec3<f32> = textureSample(t_diffuse, s_diffuse, frag_in.uv).rgb / push_constants.num_samples;
+    var diffuse: vec4<f32> = textureSample(t_diffuse, t_sampler, frag_in.uv);
 
-    return vec4<f32>(gt_tonemap(texture_sample, 1.0, 1.0, 0.22, 0.4, 1.33, 0.0), 1.0);
+    return vec4<f32>(gt_tonemap(diffuse.xyz / diffuse.w, 1.0, 1.0, 0.22, 0.4, 1.33, 0.0), 1.0);
 }

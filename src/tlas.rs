@@ -56,7 +56,7 @@ impl<'a> TLAS
         LightSampler::new(lights)
     }
 
-    pub fn intersect(&self, bump: &Bump, r: &Ray, mut t_max: f32) -> Option<(HitInfo, &Triangle, &Material)>
+    pub fn intersect(&self, bump: &Bump, r: &Ray, mut t_max: f32) -> Option<(HitInfo, &Triangle, &Material, u8)>
     {
         if !self.bvh.bounding_box.intersect(r, t_max)
         {
@@ -66,7 +66,7 @@ impl<'a> TLAS
         let mut stack: Vec<(&TLASNode, f32), _> = Vec::with_capacity_in(1, bump);
         stack.push((&self.bvh, 0.0));
 
-        let mut closest: Option<(HitInfo, &glam::Affine3A, &Triangle, &Material)> = None;
+        let mut closest: Option<(HitInfo, &glam::Affine3A, &Triangle, &Material, u8)> = None;
 
         while let Some((current, t_enter)) = stack.pop()
         {
@@ -91,13 +91,13 @@ impl<'a> TLAS
                     {
                         t_max = hit_info.t;
                         // Defer transform of normal until the end
-                        closest = Some((hit_info, matrix, triangle, material));
+                        closest = Some((hit_info, matrix, triangle, material, *blas_index));
                     }
                 }
             }
         }
 
-        closest.map(|(hit_info, matrix, primitive, material)| {
+        closest.map(|(hit_info, matrix, primitive, material, id)| {
             (
                 HitInfo {
                     // Transform the recorded normal using the transformation matrix from the parent instance
@@ -106,6 +106,7 @@ impl<'a> TLAS
                 },
                 primitive,
                 material,
+                id,
             )
         })
     }
@@ -125,6 +126,7 @@ impl<'a> TLAS
             {
                 TLASNodeType::Branch { left, right } =>
                 {
+                    stack.reserve(2);
                     stack.push(left);
                     stack.push(right);
                 }

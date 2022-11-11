@@ -19,7 +19,7 @@ const HEURISTIC_POWER: i32 = 2;
 ///     * `0`: naive weighting, returns `0.5`
 ///     * `1`: balance heuristic
 ///     * `2`: power heuristic
-fn mis_heuristic(f: f32, g: f32, power: i32) -> f32 { f.powi(power) / (f.powi(power) + g.powi(power)) }
+fn mis_heuristic<const power: i32>(f: f32, g: f32) -> f32 { f.powi(power) / (f.powi(power) + g.powi(power)) }
 
 /// Direct lighting estimation by explicit light sampling
 fn estimate_direct_explicit(
@@ -65,7 +65,7 @@ fn estimate_direct_explicit(
         let light_pdf: f32 = sample_pdf * (distance_squared / cosine);
 
         // Calculate weight from heuristic, then accumulate direct light
-        let weight: f32 = mis_heuristic(light_pdf, bsdf_pdf.pdf, HEURISTIC_POWER);
+        let weight: f32 = mis_heuristic::<HEURISTIC_POWER>(light_pdf, bsdf_pdf.pdf);
         return light_material.get_emitted() * weight * current_material.get_weakening(outgoing_ray.direction, current_hi.normal) * bsdf_pdf.bsdf
             / light_pdf;
     }
@@ -97,7 +97,7 @@ fn estimate_direct_bsdf(
     {
         // Cheap intersection test with BVH of lights only
         // Checks for a potential light intersection without traversing the full scene BVH
-        if let Some((light_hi, light, light_material)) = scene.lights.intersect(bump, &outgoing_ray, INFINITY)
+        if let Some((light_hi, light, light_material, _)) = scene.lights.intersect(bump, &outgoing_ray, INFINITY)
         {
             // Cheap test passed, do full shadow ray test
             if !scene.world.any_intersect(bump, &outgoing_ray, light_hi.t * (1.0 - EPSILON))
@@ -115,7 +115,7 @@ fn estimate_direct_bsdf(
                     let light_pdf: f32 = sample_pdf * (light_hi.t * light_hi.t / cosine);
 
                     // Calculate weight from heuristic, then accumulate direct light
-                    let weight: f32 = mis_heuristic(bsdf_pdf.pdf, light_pdf, HEURISTIC_POWER);
+                    let weight: f32 = mis_heuristic::<HEURISTIC_POWER>(bsdf_pdf.pdf, light_pdf);
                     return light_material.get_emitted()
                         * weight
                         * current_material.get_weakening(outgoing_ray.direction, current_hi.normal)
@@ -140,12 +140,21 @@ fn estimate_direct(rng: &mut TlsWyRand, bump: &Bump, r: &Ray, hit_info: &HitInfo
     estimate_direct_explicit(rng, bump, r, hit_info, mat, scene) + estimate_direct_bsdf(rng, bump, r, hit_info, mat, scene)
 }
 
-pub(crate) fn integrate(mut r: Ray, scene: &Scene, env: &Result<ImageHelper, ImageError>, rng: &mut TlsWyRand, max_bounces: u32) -> glam::Vec4
+pub(crate) fn integrate(
+    mut r: Ray,
+    scene: &Scene,
+    env: &Result<ImageHelper, ImageError>,
+    rng: &mut TlsWyRand,
+    max_bounces: u32,
+) -> (glam::Vec4, glam::Vec4, u8)
 {
     let bump: Bump = Bump::new();
 
     let mut accumulated: glam::Vec3A = glam::Vec3A::ZERO;
     let mut path_weight: glam::Vec3A = glam::Vec3A::ONE;
+
+    let mut position: glam::Vec4 = r.at(1e5).extend(1e5);
+    let mut first_id: u8 = u8::MAX;
 
     let mut last_delta: bool = false;
 
@@ -167,8 +176,14 @@ pub(crate) fn integrate(mut r: Ray, scene: &Scene, env: &Result<ImageHelper, Ima
             }
         }
 
-        if let Some((hit_info, _, material)) = scene.world.intersect(&bump, &r, INFINITY)
+        if let Some((hit_info, _, material, id)) = scene.world.intersect(&bump, &r, INFINITY)
         {
+            if b == 0
+            {
+                position = r.at(hit_info.t).extend(hit_info.t);
+                first_id = id;
+            }
+
             let wi: glam::Vec3A = -r.direction;
 
             let absorbing = volume_stack.iter().filter_map(|v| v.absorption.as_ref());
@@ -256,11 +271,11 @@ pub(crate) fn integrate(mut r: Ray, scene: &Scene, env: &Result<ImageHelper, Ima
 
     if accumulated.is_finite()
     {
-        accumulated.clamp_length_max(100.0).extend(1.0)
+        (accumulated.clamp_length_max(100.0).extend(1.0), position, first_id)
         // accumulated.extend(1.0)
     }
     else
     {
-        glam::Vec4::W
+        (glam::Vec4::W, position, first_id)
     }
 }

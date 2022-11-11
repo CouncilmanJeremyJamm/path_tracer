@@ -15,12 +15,12 @@ inherits = "release"
 debug = true
 
 [dependencies.image]
-version = "0.24.3"
+version = "0.24.4"
 default-features = false
 features = ["jpeg", "jpeg_rayon", "png"]
 
 [dependencies.mimalloc]
-version = "0.1.29"
+version = "0.1.30"
 default-features = false
 
 [dependencies.nanorand]
@@ -29,16 +29,16 @@ default-features = false
 features = ["tls"]
 
 [dependencies]
-bumpalo = { version = "3.11.0", features = ["allocator_api"] }
+bumpalo = { version = "3.11.1", features = ["allocator_api"] }
 enum_dispatch = "0.3.8"
-glam = { version = "0.21.3", features = ["fast-math", "bytemuck"] }
+glam = { version = "0.22.0", features = ["fast-math", "bytemuck"] }
 nohash-hasher = "0.2.0"
 rayon = "1.5.3"
-num_cpus = "1.13.1"
+num_cpus = "1.14.0"
 
-winit = "0.27.3"
+winit = "0.27.5"
 env_logger = "0.9.1"
 log = "0.4.17"
-wgpu = "0.13.1"
+wgpu = "0.14.0"
 pollster = "0.2.5"
-bytemuck = "1.12.1"
+bytemuck = "1.12.2"

@@ -8,8 +8,8 @@ pub struct Camera
     yaw: f32,
     pitch: f32,
 
-    matrix: glam::Affine3A,
-    pub projection: glam::Mat4,
+    pub(crate) matrix: glam::Affine3A,
+    pub(crate) inv_projection: glam::Mat4,
 }
 
 impl Camera
@@ -17,7 +17,8 @@ impl Camera
     pub fn new(origin: glam::Vec3A, target: glam::Vec3A, fov: f32, aspect_ratio: f32, _: f32, _: f32) -> Self
     {
         let matrix: glam::Affine3A = glam::Affine3A::look_at_rh(origin.into(), target.into(), glam::Vec3::Y).inverse();
-        let projection: glam::Mat4 = glam::Mat4::perspective_infinite_rh(fov.to_radians(), aspect_ratio, 1.0).inverse();
+        let projection: glam::Mat4 = glam::Mat4::perspective_infinite_rh(fov.to_radians(), aspect_ratio, 1.0);
+        let inv_projection: glam::Mat4 = projection.inverse();
 
         let (pitch, yaw, _): (f32, f32, f32) = matrix.to_scale_rotation_translation().1.to_euler(glam::EulerRot::YXZ);
 
@@ -25,7 +26,7 @@ impl Camera
             yaw,
             pitch,
             matrix,
-            projection,
+            inv_projection,
         }
     }
 
@@ -92,11 +93,13 @@ impl Camera
 
     pub fn create_ray(&self, s: f32, t: f32) -> Ray
     {
-        let dir: glam::Vec3A = self
-            .matrix
-            .transform_vector3(self.projection.project_point3(glam::Vec3::new(s * 2.0 - 1.0, t * 2.0 - 1.0, 0.0)))
-            .normalize()
-            .into();
+        let ndc: glam::Vec3 = glam::Vec3::new(s * 2.0 - 1.0, t * 2.0 - 1.0, 0.0);
+
+        let point: glam::Vec3A = (self.matrix * self.inv_projection).project_point3(ndc).into();
+        let dir: glam::Vec3A = (point - self.matrix.translation).normalize();
+
+        // let ndc: glam::Vec3A = glam::Vec3A::new(s * 2.0 - 1.0, t * 2.0 - 1.0, 0.0);
+        // let dir: glam::Vec3A = (self.matrix * self.inv_projection).transform_point3a(ndc);
 
         Ray::new(self.matrix.translation, dir)
     }
