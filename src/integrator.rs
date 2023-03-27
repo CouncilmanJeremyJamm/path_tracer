@@ -19,7 +19,7 @@ const HEURISTIC_POWER: i32 = 2;
 ///     * `0`: naive weighting, returns `0.5`
 ///     * `1`: balance heuristic
 ///     * `2`: power heuristic
-fn mis_heuristic<const power: i32>(f: f32, g: f32) -> f32 { f.powi(power) / (f.powi(power) + g.powi(power)) }
+fn mis_heuristic<const POWER: i32>(f: f32, g: f32) -> f32 { f.powi(POWER) / (f.powi(POWER) + g.powi(POWER)) }
 
 /// Direct lighting estimation by explicit light sampling
 fn estimate_direct_explicit(
@@ -97,7 +97,7 @@ fn estimate_direct_bsdf(
     {
         // Cheap intersection test with BVH of lights only
         // Checks for a potential light intersection without traversing the full scene BVH
-        if let Some((light_hi, light, light_material, _)) = scene.lights.intersect(bump, &outgoing_ray, INFINITY)
+        if let Some((light_hi, _, light, light_material)) = scene.lights.intersect(bump, &outgoing_ray, INFINITY)
         {
             // Cheap test passed, do full shadow ray test
             if !scene.world.any_intersect(bump, &outgoing_ray, light_hi.t * (1.0 - EPSILON))
@@ -176,12 +176,12 @@ pub(crate) fn integrate(
             }
         }
 
-        if let Some((hit_info, _, material, id)) = scene.world.intersect(&bump, &r, INFINITY)
+        if let Some((hit_info, id, _, material)) = scene.world.intersect(&bump, &r, INFINITY)
         {
             if b == 0
             {
                 position = r.at(hit_info.t).extend(hit_info.t);
-                first_id = id;
+                first_id = id.index() as u8;
             }
 
             let wi: glam::Vec3A = -r.direction;

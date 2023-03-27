@@ -1,21 +1,21 @@
 #![allow(clippy::upper_case_acronyms, clippy::new_ret_no_self)]
-#![feature(allocator_api, array_chunks)]
-#![feature(box_into_inner)]
-#![feature(adt_const_params)]
+#![feature(allocator_api, array_chunks, box_into_inner)]
 
 use nanorand::tls::TlsWyRand;
 use nanorand::Rng;
+use pollster::FutureExt;
 use rayon::prelude::*;
-use winit::dpi::PhysicalSize;
+use winit::window::Window;
 use winit::{
+    dpi::PhysicalSize,
     event::*,
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
 };
 
-use tlas::blas::primitive::material::*;
-use tlas::blas::primitive::model::{HitInfo, Model};
-use tlas::blas::primitive::Triangle;
+use tlas::tlas_bvh::blas::primitive::material::*;
+use tlas::tlas_bvh::blas::primitive::model::{HitInfo, Model};
+use tlas::tlas_bvh::blas::primitive::Triangle;
 
 use crate::camera::Camera;
 use crate::image_helper::ImageHelper;
@@ -50,9 +50,24 @@ const MAX_BOUNCES: u32 = 1024;
 
 const ENABLE_NEE: bool = true;
 
-fn main() { pollster::block_on(run()); }
+fn main()
+{
+    env_logger::init();
+    let event_loop: EventLoop<()> = EventLoop::new();
 
-async fn run()
+    let window: Window = WindowBuilder::new()
+        .with_title("Path Tracer")
+        .with_inner_size(PhysicalSize::new(IMAGE_WIDTH as f32, IMAGE_HEIGHT as f32))
+        .with_visible(true)
+        .build(&event_loop)
+        .unwrap();
+
+    // State::new uses async code, so we're going to wait for it to finish
+    let state: State = State::new(&window).block_on();
+    run(event_loop, window, state);
+}
+
+fn run(event_loop: EventLoop<()>, window: Window, mut state: State)
 {
     rayon::ThreadPoolBuilder::new().num_threads(num_cpus::get() - 1).build_global().unwrap();
 
@@ -120,19 +135,6 @@ async fn run()
     let mut data: Box<[glam::Vec4; IMAGE_WIDTH * IMAGE_HEIGHT]> = Box::new([glam::Vec4::ZERO; IMAGE_WIDTH * IMAGE_HEIGHT]);
     let mut position: Box<[glam::Vec4; IMAGE_WIDTH * IMAGE_HEIGHT]> = Box::new([glam::Vec4::ZERO; IMAGE_WIDTH * IMAGE_HEIGHT]);
     let mut id: Box<[u32; IMAGE_WIDTH * IMAGE_HEIGHT]> = Box::new([0; IMAGE_WIDTH * IMAGE_HEIGHT]);
-
-    env_logger::init();
-    let event_loop = EventLoop::new();
-
-    let window = WindowBuilder::new()
-        .with_title("Path Tracer")
-        .with_inner_size(PhysicalSize::new(IMAGE_WIDTH as f32, IMAGE_HEIGHT as f32))
-        .with_visible(true)
-        .build(&event_loop)
-        .unwrap();
-
-    // State::new uses async code, so we're going to wait for it to finish
-    let mut state: State = State::new(&window).await;
 
     let mut last_time: std::time::Instant = std::time::Instant::now();
 

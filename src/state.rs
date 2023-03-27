@@ -22,6 +22,7 @@ impl Texture
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format,
+            view_formats: &[format],
             usage,
         });
 
@@ -73,8 +74,11 @@ impl State
     pub(crate) async fn new(window: &Window) -> State
     {
         let size: PhysicalSize<u32> = window.inner_size();
-        let instance: wgpu::Instance = wgpu::Instance::new(wgpu::Backends::PRIMARY);
-        let surface: wgpu::Surface = unsafe { instance.create_surface(window) };
+        let instance: wgpu::Instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::Backends::PRIMARY,
+            dx12_shader_compiler: wgpu::Dx12Compiler::Fxc,
+        });
+        let surface: wgpu::Surface = unsafe { instance.create_surface(window).unwrap() };
         let adapter: wgpu::Adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,
@@ -99,9 +103,12 @@ impl State
             .await
             .unwrap();
 
+        // let capabilities = surface.get_capabilities(&adapter);
+
         let config: wgpu::SurfaceConfiguration = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: dbg!(surface.get_supported_formats(&adapter)[0]),
+            format: dbg!(wgpu::TextureFormat::Bgra8UnormSrgb),
+            view_formats: vec![wgpu::TextureFormat::Bgra8UnormSrgb],
             width: size.width,
             height: size.height,
             present_mode: wgpu::PresentMode::Mailbox,

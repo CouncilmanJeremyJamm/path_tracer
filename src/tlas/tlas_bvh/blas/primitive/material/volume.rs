@@ -3,7 +3,7 @@ use std::hash::{Hash, Hasher};
 use nanorand::tls::TlsWyRand;
 use nanorand::Rng;
 
-use crate::tlas::blas::primitive::material::onb::generate_onb;
+use crate::tlas::tlas_bvh::blas::primitive::material::onb::generate_onb;
 
 #[derive(Copy, Clone)]
 /// Implementation of Henyey-Greenstein phase function.

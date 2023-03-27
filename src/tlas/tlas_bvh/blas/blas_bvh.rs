@@ -1,9 +1,13 @@
 use std::cmp::Ordering;
 
+use ambassador::Delegate;
+use id_arena::{Arena, Id};
 use rayon::prelude::ParallelSliceMut;
 
-use crate::tlas::blas::blas_bvh::boundingbox::{surrounding_box, AABB};
+use crate::tlas::tlas_bvh::blas::blas_bvh::boundingbox::{surrounding_box, HasBox, AABB};
+use crate::tlas::tlas_bvh::blas::primitive::Triangle;
 
+#[macro_use]
 pub mod boundingbox;
 
 const DESIRED_BINS: usize = 64;
@@ -14,18 +18,12 @@ const INTERSECTION_COST: f32 = 2.0;
 pub(crate) struct PrimitiveInfo
 {
     bounding_box: AABB,
-    primitive_index: u32,
+    primitive_id: Id<Triangle>,
 }
 
 impl PrimitiveInfo
 {
-    pub fn new(bounding_box: AABB, primitive_index: u32) -> Self
-    {
-        Self {
-            bounding_box,
-            primitive_index,
-        }
-    }
+    pub fn new(bounding_box: AABB, primitive_id: Id<Triangle>) -> Self { Self { bounding_box, primitive_id } }
 
     pub fn create_bounding_box(object_info: &[Self]) -> AABB
     {
@@ -39,49 +37,41 @@ pub(crate) enum BLASNodeType
 {
     LeafSingle
     {
-        primitive_index: u32
+        primitive_id: Id<Triangle>
     },
     Leaf
     {
-        primitive_indices: Box<[u32]>
+        primitive_ids: Box<[Id<Triangle>]>
     },
     Branch
     {
-        left: Box<BLASNode>, right: Box<BLASNode>
+        left: Id<BLASNode>, right: Id<BLASNode>
     },
 }
 
-pub trait HasBox
-{
-    fn get_box(&self) -> &AABB;
-}
-
+#[derive(Delegate)]
+#[delegate(HasBox, target = "bounding_box")]
 pub(crate) struct BLASNode
 {
     pub(crate) bounding_box: AABB,
     pub(crate) node_type: BLASNodeType,
 }
 
-impl HasBox for BLASNode
-{
-    fn get_box(&self) -> &AABB { &self.bounding_box }
-}
-
 impl BLASNode
 {
-    pub(super) fn generate_blas(object_info: &mut [PrimitiveInfo], last_split_axis: u8) -> Self
+    pub(in crate::tlas) fn generate_blas(blas_arena: &mut Arena<BLASNode>, object_info: &mut [PrimitiveInfo], last_split_axis: u8) -> Id<Self>
     {
         let object_span: usize = object_info.len();
         debug_assert!(object_span > 0);
 
         if object_span == 1
         {
-            Self {
+            blas_arena.alloc(Self {
                 bounding_box: object_info[0].bounding_box,
                 node_type: BLASNodeType::LeafSingle {
-                    primitive_index: object_info[0].primitive_index,
+                    primitive_id: object_info[0].primitive_id,
                 },
-            }
+            })
         }
         else
         {
@@ -96,7 +86,8 @@ impl BLASNode
             if split_axis != last_split_axis
             {
                 let comparator = |a: &PrimitiveInfo, b: &PrimitiveInfo| -> Ordering { a.bounding_box.compare(&b.bounding_box, split_axis) };
-                object_info.par_sort_unstable_by(comparator);
+                glidesort::sort_by(object_info, comparator);
+                // object_info.par_sort_unstable_by(comparator);
             }
 
             let bin_size: usize = (object_span / DESIRED_BINS).max(1);
@@ -122,26 +113,24 @@ impl BLASNode
 
             if no_split_sah < best_split_sah
             {
-                Self {
+                blas_arena.alloc(Self {
                     bounding_box,
                     node_type: BLASNodeType::Leaf {
-                        primitive_indices: object_info.iter().map(|a| a.primitive_index).collect::<Vec<_>>().into_boxed_slice(),
+                        primitive_ids: object_info.iter().map(|a| a.primitive_id).collect::<Vec<_>>().into_boxed_slice(),
                     },
-                }
+                })
             }
             else
             {
                 let (left_info, right_info): (&mut [PrimitiveInfo], &mut [PrimitiveInfo]) = object_info.split_at_mut(best_split);
 
-                let (left, right): (Box<BLASNode>, Box<BLASNode>) = rayon::join(
-                    || Box::new(Self::generate_blas(left_info, split_axis)),
-                    || Box::new(Self::generate_blas(right_info, split_axis)),
-                );
+                let left: Id<BLASNode> = Self::generate_blas(blas_arena, left_info, split_axis);
+                let right: Id<BLASNode> = Self::generate_blas(blas_arena, right_info, split_axis);
 
-                Self {
+                blas_arena.alloc(Self {
                     bounding_box,
                     node_type: BLASNodeType::Branch { left, right },
-                }
+                })
             }
         }
     }

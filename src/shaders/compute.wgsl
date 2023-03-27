@@ -10,7 +10,7 @@
 
 fn w_divide(v: vec4<f32>) -> vec3<f32>
 {
-    return v.xyz / v.w;
+    return v.xyz / max(v.w, 1.0);
 }
 
 fn sample_catmull_rom(tex: texture_2d<f32>, tex_size: vec2<f32>, smp: sampler, uv: vec2<f32>) -> vec3<f32>

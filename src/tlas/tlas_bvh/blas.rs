@@ -3,16 +3,43 @@ use std::io::{BufRead, BufReader};
 use std::time::Instant;
 
 use bumpalo::Bump;
-use rayon::prelude::{IndexedParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use id_arena::{Arena, Id};
+use rayon::prelude::ParallelIterator;
 
 use primitive::model::{Model, Vertex, VertexRef};
 use primitive::Triangle;
 
-use crate::tlas::blas::blas_bvh::{BLASNode, BLASNodeType, HasBox, PrimitiveInfo};
+use crate::tlas::tlas_bvh::blas::blas_bvh::boundingbox::HasBox;
+use crate::tlas::tlas_bvh::blas::blas_bvh::{BLASNode, BLASNodeType, PrimitiveInfo};
 use crate::{HitInfo, Material, MaterialTrait, Ray};
 
+#[macro_use]
 pub mod blas_bvh;
 pub mod primitive;
+
+#[derive(Clone)]
+pub enum TokenType
+{
+    Comment,
+    Vertex,
+    Normal,
+    Texture,
+    Face,
+    Group,
+    Material,
+}
+
+static TOKEN_TYPE: phf::Map<&'static str, TokenType> = phf::phf_map! {
+    "#" => TokenType::Comment,
+    "v" => TokenType::Vertex,
+    "vn" => TokenType::Normal,
+    "vt" => TokenType::Texture,
+    "f" => TokenType::Face,
+    "g" => TokenType::Group,
+    "usemtl" => TokenType::Material,
+};
+
+pub fn parse_token(keyword: &str) -> Option<TokenType> { TOKEN_TYPE.get(keyword).cloned() }
 
 pub fn load_obj(path: &std::path::Path) -> Vec<Vertex>
 {
@@ -23,15 +50,14 @@ pub fn load_obj(path: &std::path::Path) -> Vec<Vertex>
 
     let file: File = File::open(path).unwrap();
     let lines = BufReader::new(file).lines().filter_map(|l| l.ok());
-
+    let timer: Instant = Instant::now();
     for line in lines
     {
         let tokens: Vec<&str> = line.split_whitespace().collect();
 
-        match tokens[0]
+        match parse_token(tokens[0])
         {
-            "v" =>
-            //Vertex
+            Some(TokenType::Vertex) =>
             {
                 let x: f32 = tokens[1].parse().unwrap();
                 let y: f32 = tokens[2].parse().unwrap();
@@ -39,8 +65,7 @@ pub fn load_obj(path: &std::path::Path) -> Vec<Vertex>
 
                 positions.push(glam::Vec3A::new(x, y, z));
             }
-            "vn" =>
-            //Normal
+            Some(TokenType::Normal) =>
             {
                 let x: f32 = tokens[1].parse().unwrap();
                 let y: f32 = tokens[2].parse().unwrap();
@@ -48,8 +73,7 @@ pub fn load_obj(path: &std::path::Path) -> Vec<Vertex>
 
                 normals.push(glam::Vec3A::new(x, y, z).normalize());
             }
-            "f" =>
-            //Polygon
+            Some(TokenType::Face) =>
             {
                 let mut refs: Vec<VertexRef> = Vec::new();
 
@@ -95,22 +119,23 @@ pub fn load_obj(path: &std::path::Path) -> Vec<Vertex>
                 }
             }
             _ =>
-            //Comments, textures
+            //Comments, textures, unknown
             {
                 continue;
             }
         }
     }
 
+    println!("loading model took {} ms", timer.elapsed().as_millis());
     vertices
 }
 
-pub fn push_to_stack<'a, 'b, N>(r: &Ray, t_max: f32, stack: &'b mut Vec<(&'a N, f32), &Bump>, left: &'a N, right: &'a N)
+pub(crate) fn push_to_stack<N>(r: &Ray, t_max: f32, stack: &mut Vec<(Id<N>, f32), &Bump>, arena: &Arena<N>, left: Id<N>, right: Id<N>)
 where
     N: HasBox,
 {
-    let intersect_left = left.get_box().intersect_t(r, t_max);
-    let intersect_right = right.get_box().intersect_t(r, t_max);
+    let intersect_left = arena[left].get_box().intersect_t(r, t_max);
+    let intersect_right = arena[right].get_box().intersect_t(r, t_max);
 
     if let (Some(t_enter_left), Some(t_enter_right)) = (intersect_left, intersect_right)
     {
@@ -138,9 +163,10 @@ where
 
 pub(crate) struct BLAS
 {
-    pub primitives: Vec<Triangle>,
+    pub primitives: Arena<Triangle>,
     pub material: Material,
-    pub bvh: BLASNode,
+    pub root_id: Id<BLASNode>,
+    pub blas_node_arena: Arena<BLASNode>,
 }
 
 impl<'a> BLAS
@@ -150,42 +176,46 @@ impl<'a> BLAS
         let timer: Instant = Instant::now();
 
         let vertices: Vec<Vertex> = load_obj(model.file_path);
-        let primitives: Vec<Triangle> = vertices.array_chunks::<3>().map(Triangle::new).collect();
+        let mut primitives: Arena<Triangle> = Arena::with_capacity(vertices.len() / 3);
+
+        vertices.array_chunks::<3>().for_each(|v| {
+            primitives.alloc(Triangle::new(v));
+        });
 
         let mut primitive_info: Vec<PrimitiveInfo> = primitives
             .par_iter()
-            .enumerate()
-            .map(|tuple: (usize, &Triangle)| -> PrimitiveInfo { PrimitiveInfo::new(tuple.1.create_bounding_box(), tuple.0 as u32) })
+            .map(|(id, p): (Id<Triangle>, &Triangle)| -> PrimitiveInfo { PrimitiveInfo::new(p.create_bounding_box(), id) })
             .collect();
 
-        let bvh: BLASNode = BLASNode::generate_blas(primitive_info.as_mut_slice(), 4);
+        let mut blas_arena: Arena<BLASNode> = Arena::new();
+        let root_id: Id<BLASNode> = BLASNode::generate_blas(&mut blas_arena, primitive_info.as_mut_slice(), 4);
 
         println!("BLAS - {:?}: \t{:?}", model.file_path.file_name().unwrap(), timer.elapsed());
 
         Self {
             primitives,
             material: model.material,
-            bvh,
+            root_id,
+            blas_node_arena: blas_arena,
         }
     }
 
-    pub fn generate_lights(&self, blas_index: u8) -> Vec<(u8, u32, f32)>
+    pub fn generate_lights(&self, blas_id: Id<BLAS>) -> Vec<(Id<BLAS>, Id<Triangle>, f32)>
     {
         self.primitives
             .iter()
-            .enumerate()
-            .map(|(primitive_index, p)| {
+            .map(|(id, p): (Id<Triangle>, &Triangle)| {
                 let weight: f32 = p.area() * self.material.get_emitted().length();
-                (blas_index, primitive_index as u32, weight)
+                (blas_id, id, weight)
             })
             .collect()
     }
 
-    pub fn intersect(&self, bump: &Bump, r: &Ray, mut t_max: f32) -> Option<(HitInfo, &Triangle, &Material)>
+    pub fn intersect(&self, bump: &Bump, r: &Ray, mut t_max: f32) -> Option<(HitInfo, Id<Triangle>)>
     {
-        let mut stack: Vec<(&BLASNode, f32), _> = Vec::new_in(bump);
-        stack.push((&self.bvh, 0.0));
-        let mut closest: Option<(HitInfo, u32)> = None;
+        let mut stack: Vec<(Id<BLASNode>, f32), _> = Vec::new_in(bump);
+        stack.push((self.root_id, 0.0));
+        let mut closest: Option<(HitInfo, Id<Triangle>)> = None;
 
         while let Some((current, t_enter)) = stack.pop()
         {
@@ -194,66 +224,64 @@ impl<'a> BLAS
                 continue;
             }
 
-            match &current.node_type
+            match &self.blas_node_arena[current].node_type
             {
-                BLASNodeType::Branch { left, right } => push_to_stack(r, t_max, &mut stack, left, right),
-                BLASNodeType::LeafSingle { primitive_index } =>
+                BLASNodeType::Branch { left, right } => push_to_stack(r, t_max, &mut stack, &self.blas_node_arena, *left, *right),
+                BLASNodeType::LeafSingle { primitive_id } =>
                 //Fast path for single child
                 {
-                    let primitive: &Triangle = &self.primitives[*primitive_index as usize];
+                    let primitive: &Triangle = &self.primitives[*primitive_id];
                     if let Some(intersection) = primitive.intersect(r, t_max, t_enter)
                     {
                         t_max = intersection.t;
-                        closest = Some((intersection, *primitive_index));
+                        closest = Some((intersection, *primitive_id));
                         //println!("{} {}", t_enter, t_max);
                     }
                 }
-                BLASNodeType::Leaf { primitive_indices } =>
+                BLASNodeType::Leaf { primitive_ids } =>
                 {
-                    for i in primitive_indices.as_ref()
+                    for id in primitive_ids.as_ref()
                     {
-                        if let Some(intersection) = self.primitives[*i as usize].intersect(r, t_max, t_enter)
+                        if let Some(intersection) = self.primitives[*id].intersect(r, t_max, t_enter)
                         {
                             t_max = intersection.t;
-                            closest = Some((intersection, *i));
+                            closest = Some((intersection, *id));
                         }
                     }
                 }
             }
         }
 
-        closest.map(|(intersection, primitive_index)| (intersection, &self.primitives[primitive_index as usize], &self.material))
+        closest
     }
     pub fn any_intersect(&self, bump: &Bump, r: &Ray, t_max: f32) -> bool
     {
-        let mut stack: Vec<&BLASNode, _> = Vec::new_in(bump);
-        stack.push(&self.bvh);
+        let mut stack: Vec<Id<BLASNode>, _> = Vec::new_in(bump);
+        stack.push(self.root_id);
 
         while let Some(current) = stack.pop()
         {
-            if let Some(t_enter) = current.bounding_box.intersect_t(r, t_max)
+            if let Some(t_enter) = self.blas_node_arena[current].bounding_box.intersect_t(r, t_max)
             {
-                match &current.node_type
+                match &self.blas_node_arena[current].node_type
                 {
                     BLASNodeType::Branch { left, right } =>
                     {
                         stack.reserve(2);
-                        stack.push(left);
-                        stack.push(right);
+                        stack.push(*left);
+                        stack.push(*right);
                     }
-                    BLASNodeType::LeafSingle { primitive_index } =>
+                    BLASNodeType::LeafSingle { primitive_id } =>
                     //Fast path for single child
                     {
-                        if self.primitives[*primitive_index as usize].intersect_bool(r, t_max, t_enter)
+                        if self.primitives[*primitive_id].intersect_bool(r, t_max, t_enter)
                         {
                             return true;
                         }
                     }
-                    BLASNodeType::Leaf { primitive_indices } =>
+                    BLASNodeType::Leaf { primitive_ids } =>
                     {
-                        if primitive_indices
-                            .iter()
-                            .any(|i| self.primitives[*i as usize].intersect_bool(r, t_max, t_enter))
+                        if primitive_ids.iter().any(|id| self.primitives[*id].intersect_bool(r, t_max, t_enter))
                         {
                             return true;
                         }

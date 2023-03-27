@@ -1,8 +1,15 @@
+use ambassador::delegatable_trait;
 use glam::swizzles::Vec3Swizzles;
 
 use crate::ray::Ray;
 use crate::utility::EPSILON;
 use crate::INFINITY;
+
+#[delegatable_trait]
+pub trait HasBox
+{
+    fn get_box(&self) -> &AABB;
+}
 
 #[allow(clippy::upper_case_acronyms)]
 #[derive(Copy, Clone)]
@@ -21,6 +28,11 @@ impl Default for AABB
             maximum: glam::Vec3A::ZERO,
         }
     }
+}
+
+impl HasBox for AABB
+{
+    fn get_box(&self) -> &AABB { self }
 }
 
 impl AABB

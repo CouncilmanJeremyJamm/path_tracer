@@ -1,9 +1,10 @@
-use enum_dispatch::enum_dispatch;
+use ambassador::delegatable_trait;
+use ambassador::Delegate;
 use nanorand::tls::TlsWyRand;
 use nanorand::Rng;
 
-use crate::tlas::blas::primitive::material::onb::{generate_onb, generate_onb_ggx};
-use crate::tlas::blas::primitive::model::HitInfo;
+use crate::tlas::tlas_bvh::blas::primitive::material::onb::{generate_onb, generate_onb_ggx};
+use crate::tlas::tlas_bvh::blas::primitive::model::HitInfo;
 use crate::utility::{random_cosine_vector, reflect, refract};
 use crate::Volume;
 
@@ -31,12 +32,15 @@ impl BsdfPdf
     }
 }
 
-#[enum_dispatch]
+#[delegatable_trait]
 /// Common interface for all material types.
 ///
 /// Implements `Sync + Send` to allow multithreading
 pub trait MaterialTrait: Sync + Send
 {
+    const DELTA: bool = false;
+    const EMISSIVE: bool = false;
+
     /// Generates an outgoing direction
     fn scatter_direction(&self, rng: &mut TlsWyRand, incoming: glam::Vec3A, normal: glam::Vec3A, front_facing: bool) -> glam::Vec3A;
 
@@ -47,10 +51,10 @@ pub trait MaterialTrait: Sync + Send
     fn get_emitted(&self) -> glam::Vec3A { glam::Vec3A::ZERO }
 
     /// Returns `true` if the current material has a delta distribution
-    fn is_delta(&self) -> bool { false }
+    fn is_delta(&self) -> bool { Self::DELTA }
 
     /// Returns `true` if the current material type is `Emissive`
-    fn is_emissive(&self) -> bool { false }
+    fn is_emissive(&self) -> bool { Self::EMISSIVE }
 
     /// Returns `None` for non-transmissive materials.
     ///
@@ -73,15 +77,15 @@ pub trait MaterialTrait: Sync + Send
     }
 }
 
-#[enum_dispatch(MaterialTrait)]
-#[derive(Clone)]
+#[derive(Clone, Delegate)]
+#[delegate(MaterialTrait)]
 pub enum Material
 {
-    Lambertian,
-    Emissive,
-    Specular,
-    GGX,
-    Dielectric,
+    Lambertian(Lambertian),
+    Emissive(Emissive),
+    Specular(Specular),
+    GGX(GGX),
+    Dielectric(Dielectric),
 }
 
 #[derive(Clone)]
@@ -92,7 +96,7 @@ pub struct Lambertian
 
 impl Lambertian
 {
-    pub fn new(albedo: glam::Vec3A) -> Material { Self { albedo }.into() }
+    pub fn new(albedo: glam::Vec3A) -> Material { Material::Lambertian(Self { albedo }) }
 }
 
 impl MaterialTrait for Lambertian
@@ -119,15 +123,16 @@ pub struct Emissive
 
 impl Emissive
 {
-    pub fn new(emitted: glam::Vec3A) -> Material { Self { emitted }.into() }
+    pub fn new(emitted: glam::Vec3A) -> Material { Material::Emissive(Self { emitted }) }
 }
 
 impl MaterialTrait for Emissive
 {
+    const EMISSIVE: bool = true;
+
     fn scatter_direction(&self, _: &mut TlsWyRand, _: glam::Vec3A, _: glam::Vec3A, _: bool) -> glam::Vec3A { glam::Vec3A::ZERO }
     fn get_bsdf_pdf(&self, _: glam::Vec3A, _: glam::Vec3A, _: &HitInfo) -> BsdfPdf { BsdfPdf::new_delta(self.emitted) }
     fn get_emitted(&self) -> glam::Vec3A { self.emitted }
-    fn is_emissive(&self) -> bool { true }
 }
 
 #[derive(Clone)]
@@ -138,16 +143,16 @@ pub struct Specular
 
 impl Specular
 {
-    pub fn new(colour: glam::Vec3A) -> Material { Self { colour }.into() }
+    pub fn new(colour: glam::Vec3A) -> Material { Material::Specular(Self { colour }) }
 }
 
 impl MaterialTrait for Specular
 {
+    const DELTA: bool = true;
+
     fn scatter_direction(&self, _: &mut TlsWyRand, incoming: glam::Vec3A, normal: glam::Vec3A, _: bool) -> glam::Vec3A { reflect(incoming, normal) }
 
     fn get_bsdf_pdf(&self, _: glam::Vec3A, _: glam::Vec3A, _: &HitInfo) -> BsdfPdf { BsdfPdf::new_delta(self.colour) }
-
-    fn is_delta(&self) -> bool { true }
 }
 
 /// Implementation of GGX model based on *Microfacet Models for Refraction through Rough Surfaces*
@@ -284,12 +289,11 @@ impl GGX
     /// * `roughness` - linear surface roughness
     pub fn new_metal(colour: glam::Vec3A, roughness: f32) -> Material
     {
-        Self {
+        Material::GGX(Self {
             colour,
             a: roughness.powi(2).clamp(0.0001, 0.9999),
             ggx_model: GGXModel::REFLECTIVE,
-        }
-        .into()
+        })
     }
 
     /// Constructs a GGX material using the `REFRACTIVE` model
@@ -300,12 +304,11 @@ impl GGX
     /// * `ior` - index of refraction
     pub fn new_dielectric(colour: glam::Vec3A, roughness: f32, ior: f32, volume: Option<Volume>) -> Material
     {
-        Self {
+        Material::GGX(Self {
             colour,
             a: roughness.powi(2).clamp(0.0001, 0.9999),
             ggx_model: GGXModel::TRANSMISSIVE { ior, volume },
-        }
-        .into()
+        })
     }
 }
 
@@ -469,7 +472,7 @@ pub struct Dielectric
 
 impl Dielectric
 {
-    pub fn new(colour: glam::Vec3A, ior: f32, volume: Option<Volume>) -> Material { Self { colour, ior, volume }.into() }
+    pub fn new(colour: glam::Vec3A, ior: f32, volume: Option<Volume>) -> Material { Material::Dielectric(Self { colour, ior, volume }) }
 
     fn f(cosine: f32, eta: f32) -> f32
     {
@@ -488,6 +491,8 @@ impl Dielectric
 
 impl MaterialTrait for Dielectric
 {
+    const DELTA: bool = true;
+
     fn scatter_direction(&self, rng: &mut TlsWyRand, incoming: glam::Vec3A, normal: glam::Vec3A, front_facing: bool) -> glam::Vec3A
     {
         let eta: f32 = if front_facing { self.ior.recip() } else { self.ior };
@@ -520,8 +525,6 @@ impl MaterialTrait for Dielectric
             BsdfPdf::new(self.colour * bsdf, 1.0 - f)
         }
     }
-
-    fn is_delta(&self) -> bool { true }
 
     fn get_volume(&self) -> Option<&Volume> { self.volume.as_ref() }
 }

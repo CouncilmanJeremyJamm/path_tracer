@@ -3,6 +3,7 @@ use nanorand::tls::TlsWyRand;
 use light_sampler::LightSampler;
 
 use crate::scene::light_sampler::LightItem;
+use crate::tlas::tlas_bvh::blas::BLAS;
 use crate::MaterialTrait;
 use crate::{Material, Model, Triangle, TLAS};
 
@@ -24,7 +25,7 @@ impl<'a> Scene
         let world: TLAS = TLAS::new(models);
         let lights: TLAS = TLAS::new(lights_models);
 
-        let light_sampler = lights.generate_lights();
+        let light_sampler: LightSampler = lights.generate_lights();
 
         Self {
             world,
@@ -37,8 +38,8 @@ impl<'a> Scene
     {
         let light_item: LightItem = self.light_sampler.sample(rng);
 
-        let blas = &self.lights.blas_vec[light_item.blas_index as usize];
-        let primitive = &blas.primitives[light_item.primitive_index as usize];
+        let blas: &BLAS = &self.lights.blas_arena[light_item.blas_id];
+        let primitive: &Triangle = &blas.primitives[light_item.primitive_id];
 
         (&blas.material, primitive, light_item.pdf)
     }

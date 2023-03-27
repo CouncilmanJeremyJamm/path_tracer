@@ -2,8 +2,8 @@ use nanorand::tls::TlsWyRand;
 use nanorand::Rng;
 
 use crate::ray::Ray;
-use crate::tlas::blas::blas_bvh::boundingbox::AABB;
-use crate::tlas::blas::Vertex;
+use crate::tlas::tlas_bvh::blas::blas_bvh::boundingbox::AABB;
+use crate::tlas::tlas_bvh::blas::Vertex;
 use crate::utility::EPSILON;
 use crate::HitInfo;
 

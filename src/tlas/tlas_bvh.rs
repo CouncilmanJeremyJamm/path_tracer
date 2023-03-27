@@ -1,21 +1,29 @@
-use crate::tlas::blas::blas_bvh::boundingbox::{surrounding_box, AABB};
-use crate::tlas::blas::blas_bvh::HasBox;
+use ambassador::Delegate;
+use id_arena::{Arena, Id};
+
+use blas::blas_bvh::boundingbox::HasBox;
+use blas::blas_bvh::boundingbox::{surrounding_box, AABB};
+use blas::BLAS;
+
 use crate::INFINITY;
+
+#[macro_use]
+pub mod blas;
 
 pub(super) struct BLASInfo
 {
     bounding_box: AABB,
-    blas_index: u8,
+    blas_id: Id<BLAS>,
     matrices: Vec<glam::Affine3A>,
 }
 
 impl BLASInfo
 {
-    pub fn new(bounding_box: AABB, blas_index: u8, matrices: Vec<glam::Affine3A>) -> Self
+    pub fn new(bounding_box: AABB, blas_id: Id<BLAS>, matrices: Vec<glam::Affine3A>) -> Self
     {
         Self {
             bounding_box,
-            blas_index,
+            blas_id,
             matrices,
         }
     }
@@ -25,32 +33,29 @@ pub(super) enum TLASNodeType
 {
     Leaf
     {
-        blas_index: u8,
+        blas_id: Id<BLAS>,
         matrix: glam::Affine3A,
         inv_matrix: glam::Affine3A,
     },
     Branch
     {
-        left: Box<TLASNode>, right: Box<TLASNode>
+        left: Id<TLASNode>, right: Id<TLASNode>
     },
 }
 
+#[derive(Delegate)]
+#[delegate(HasBox, target = "bounding_box")]
 pub(super) struct TLASNode
 {
     pub bounding_box: AABB,
     pub node_type: TLASNodeType,
 }
 
-impl HasBox for TLASNode
-{
-    fn get_box(&self) -> &AABB { &self.bounding_box }
-}
-
 impl TLASNode
 {
-    fn find_best_match(nodes: &[Box<TLASNode>], a_index: usize) -> usize
+    fn find_best_match(tlas_arena: &Arena<Self>, nodes: &[Id<Self>], a_index: usize) -> usize
     {
-        let a: &AABB = &nodes[a_index].bounding_box;
+        let a: &AABB = &tlas_arena[nodes[a_index]].bounding_box;
 
         let mut best_sa: f32 = INFINITY;
         let mut best_index: usize = usize::MAX;
@@ -62,7 +67,7 @@ impl TLASNode
                 continue;
             }
 
-            let b: &AABB = &nodes[i].bounding_box;
+            let b: &AABB = &tlas_arena[nodes[i]].bounding_box;
 
             let bounding_box: AABB = surrounding_box(a, b);
             let sa: f32 = bounding_box.surface_area();
@@ -77,36 +82,36 @@ impl TLASNode
         best_index
     }
 
-    pub fn generate_tlas(blas_info: &[BLASInfo]) -> Self
+    pub fn generate_tlas(tlas_arena: &mut Arena<Self>, blas_info: &[BLASInfo]) -> Id<Self>
     {
-        let mut nodes: Vec<Box<TLASNode>> = blas_info
-            .iter()
-            .flat_map(|info| {
-                info.matrices.iter().map(|&matrix| {
-                    let bb = info.bounding_box.transform(&matrix);
-                    let node = Self {
-                        bounding_box: bb,
-                        node_type: TLASNodeType::Leaf {
-                            blas_index: info.blas_index,
-                            matrix,
-                            inv_matrix: matrix.inverse(),
-                        },
-                    };
+        // Create vec of node ids with a minimum capacity (assuming 1 instance of every BLAS)
+        let mut nodes: Vec<Id<Self>> = Vec::with_capacity(blas_info.len());
 
-                    Box::new(node)
-                })
-            })
-            .collect::<Vec<_>>();
+        for info in blas_info
+        {
+            for matrix in &info.matrices
+            {
+                let bb: AABB = info.bounding_box.transform(matrix);
+                nodes.push(tlas_arena.alloc(Self {
+                    bounding_box: bb,
+                    node_type: TLASNodeType::Leaf {
+                        blas_id: info.blas_id,
+                        matrix: *matrix,
+                        inv_matrix: matrix.inverse(),
+                    },
+                }));
+            }
+        }
 
         let mut a: usize = 0;
-        let mut b: usize = Self::find_best_match(&nodes, a);
+        let mut b: usize = Self::find_best_match(tlas_arena, &nodes, a);
 
         while nodes.len() > 1
         {
-            let c: usize = Self::find_best_match(&nodes, b);
+            let c: usize = Self::find_best_match(tlas_arena, &nodes, b);
             if a == c
             {
-                let (node_1, node_2): (Box<TLASNode>, Box<TLASNode>) = if a > b
+                let (node_1, node_2): (Id<Self>, Id<Self>) = if a > b
                 {
                     (nodes.swap_remove(a), nodes.swap_remove(b))
                 }
@@ -115,14 +120,12 @@ impl TLASNode
                     (nodes.swap_remove(b), nodes.swap_remove(a))
                 };
 
-                let new_node: Box<TLASNode> = Box::new(Self {
-                    bounding_box: surrounding_box(&node_1.bounding_box, &node_2.bounding_box),
-                    node_type: TLASNodeType::Branch { left: node_1, right: node_2 },
-                });
-
                 a = nodes.len();
-                nodes.push(new_node);
-                b = Self::find_best_match(&nodes, a);
+                nodes.push(tlas_arena.alloc(Self {
+                    bounding_box: surrounding_box(&tlas_arena[node_1].bounding_box, &tlas_arena[node_2].bounding_box),
+                    node_type: TLASNodeType::Branch { left: node_1, right: node_2 },
+                }));
+                b = Self::find_best_match(tlas_arena, &nodes, a);
             }
             else
             {
@@ -131,6 +134,6 @@ impl TLASNode
             }
         }
 
-        Box::into_inner(nodes.remove(0))
+        nodes.remove(0)
     }
 }
